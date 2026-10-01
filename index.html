@@ -696,7 +696,7 @@ async function renderPptx(topic, audience, outline, hits) {
 /* ═══════════ init ═══════════ */
 if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdfjs/pdf.worker.min.js";
 $("#stVersion").textContent = `${APP_VERSION} (${VERSION_CODE})`;
-loadLib(); renderLib(); initAI();
+loadLib(); renderLib();
 /* PWA：浏览器环境下注册 Service Worker（Capacitor 壳内自动跳过） */
 if ("serviceWorker" in navigator && location.protocol === "https:") {
   navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW register skipped", e));
@@ -854,6 +854,9 @@ async function aiSlidePoints(s, hitsForSection, slideTopic) {
   } catch (e) { /* fallback below */ }
   return null;
 }
+
+/* AI 初始化：必须在 AI 配置与全部函数定义之后执行 */
+try { initAI(); } catch (e) { console.error("initAI failed", e); }
 </script>
 </body>
 </html>
