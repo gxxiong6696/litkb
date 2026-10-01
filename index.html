@@ -758,34 +758,45 @@ async function aiTest() {
     aiStatus();
   }
 }
-async function dsChat(messages, maxTokens = 900) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 30000);
-  let res;
-  try {
-    res = await fetch(AI.base + "/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + AI.key },
-      body: JSON.stringify({ model: AI.model, messages, temperature: 0.4, max_tokens: maxTokens, stream: false }),
-      signal: ctrl.signal
-    });
-  } catch (e) {
+async function dsChat(messages, maxTokens = 4000) {
+  const callOnce = async (mt) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 60000);
+    let res;
+    try {
+      res = await fetch(AI.base + "/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + AI.key },
+        body: JSON.stringify({ model: AI.model, messages, temperature: 0.4, max_tokens: mt, stream: false }),
+        signal: ctrl.signal
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      if (e.name === "AbortError") throw new Error("请求超时（60 秒无响应）");
+      throw new Error("网络不可达");
+    }
     clearTimeout(timer);
-    if (e.name === "AbortError") throw new Error("请求超时（30 秒无响应）");
-    throw new Error("网络不可达");
+    if (res.status === 401) throw new Error("密钥无效（401）");
+    if (res.status === 402) throw new Error("余额不足（402）");
+    if (res.status === 429) throw new Error("请求过快/限流（429）");
+    if (!res.ok) {
+      let msg = "HTTP " + res.status;
+      try { const j = await res.json(); if (j.error && j.error.message) msg += " " + j.error.message; } catch (e) {}
+      throw new Error(msg);
+    }
+    return res.json();
+  };
+  let data = await callOnce(maxTokens);
+  let txt = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+  // deepseek-flash 是推理模型：思维链可能耗尽 token 预算导致正文为空 → 自动加大预算重试一次
+  if (!txt) {
+    const choice = data.choices && data.choices[0];
+    if (choice && choice.finish_reason === "length" && choice.message && choice.message.reasoning_content) {
+      data = await callOnce(maxTokens * 3);
+      txt = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    }
   }
-  clearTimeout(timer);
-  if (res.status === 401) throw new Error("密钥无效（401）");
-  if (res.status === 402) throw new Error("余额不足（402）");
-  if (res.status === 429) throw new Error("请求过快/限流（429）");
-  if (!res.ok) {
-    let msg = "HTTP " + res.status;
-    try { const j = await res.json(); if (j.error && j.error.message) msg += " " + j.error.message; } catch (e) {}
-    throw new Error(msg);
-  }
-  const data = await res.json();
-  const txt = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-  if (!txt) throw new Error("响应无内容");
+  if (!txt) throw new Error("响应无内容（可重试）");
   return txt.trim();
 }
 function buildCtx(hits) {
