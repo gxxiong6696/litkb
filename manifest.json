@@ -1,0 +1,13 @@
+{
+  "name": "文献知识库",
+  "short_name": "文献知识库",
+  "description": "本地文献库：离线导入、检索问答、一键 PPT 报告。数据全程保存在手机本机。",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#FAF9F7",
+  "theme_color": "#B05A2A",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

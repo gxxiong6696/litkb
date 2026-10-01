@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>文献知识库</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#B05A2A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="文献知识库">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+  :root {
+    --bg: #faf9f7; --card: #ffffff; --ink: #14202e; --ink2: #3a4656; --ink3: #6b7686;
+    --line: #e2ddd6; --accent: #B05A2A; --accent-dark: #8a4520; --wash: #f4efe8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 15px; line-height: 1.55; display: flex; flex-direction: column;
+  }
+  header {
+    background: var(--accent); color: #fff; padding: 14px 18px 12px;
+    padding-top: calc(14px + env(safe-area-inset-top));
+  }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .sub { font-size: 12px; opacity: .85; margin-top: 2px; }
+  main { flex: 1; overflow-y: auto; padding: 14px 14px 90px; }
+  nav {
+    position: fixed; bottom: 0; left: 0; right: 0; display: flex;
+    background: var(--card); border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom); z-index: 10;
+  }
+  nav button {
+    flex: 1; border: 0; background: none; padding: 9px 0 7px; color: var(--ink3);
+    font-size: 11px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  nav button svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+  nav button.on { color: var(--accent-dark); }
+  .view { display: none; }
+  .view.on { display: block; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+  .muted { color: var(--ink3); font-size: 12.5px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+    padding: 10px 16px; font-size: 14px; font-weight: 500;
+  }
+  .btn:active { background: var(--accent-dark); }
+  .btn.ghost { background: var(--wash); color: var(--accent-dark); border: 1px solid var(--line); }
+  .btn.sm { padding: 6px 12px; font-size: 12.5px; }
+  .btn.block { width: 100%; }
+  .btn[disabled] { opacity: .5; }
+  input[type=text], textarea, select {
+    width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+    font-size: 14px; font-family: inherit; background: #fff; color: var(--ink);
+  }
+  textarea { resize: vertical; min-height: 70px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+  .chip { display: inline-block; background: var(--wash); border: 1px solid var(--line); color: var(--ink2);
+    border-radius: 999px; padding: 3px 10px; font-size: 12px; margin: 3px 4px 0 0; }
+  .item { display: flex; align-items: center; gap: 10px; padding: 11px 2px; border-bottom: 1px solid var(--line); }
+  .item:last-child { border-bottom: 0; }
+  .item .info { flex: 1; min-width: 0; }
+  .item .t { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .m { font-size: 12px; color: var(--ink3); margin-top: 1px; }
+  .item .del { border: 0; background: none; color: var(--ink3); font-size: 17px; padding: 4px 8px; }
+  .empty { text-align: center; color: var(--ink3); padding: 36px 10px; font-size: 13px; }
+  .badge { display: inline-block; font-size: 11px; border-radius: 4px; padding: 1px 6px; background: var(--wash); color: var(--accent-dark); border: 1px solid var(--line); }
+  .snip { font-size: 13px; color: var(--ink2); margin-top: 6px; line-height: 1.6; }
+  .snip b { color: var(--accent-dark); }
+  .cite { font-size: 11px; color: var(--ink3); background: var(--wash); border-radius: 4px; padding: 1px 6px; margin-left: 6px; white-space: nowrap; }
+  .prog { height: 4px; background: var(--wash); border-radius: 2px; overflow: hidden; margin-top: 8px; display: none; }
+  .prog.on { display: block; }
+  .prog i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  .toast {
+    position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
+    background: #2c3a4a; color: #fff; padding: 9px 18px; border-radius: 8px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 99; max-width: 86%;
+  }
+  .toast.on { opacity: 1; }
+  .kv { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+  .kv:last-child { border-bottom: 0; }
+  .kv b { font-weight: 600; }
+  #docView .snip { margin: 0 0 10px; }
+  .hl { background: #f6e3d3; border-radius: 2px; }
+  select { appearance: none; -webkit-appearance: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>文献知识库</h1>
+  <div class="sub">本地建库 · 离线检索 · 一键 PPT 报告</div>
+</header>
+
+<main>
+  <!-- ═══════════ 库 ═══════════ -->
+  <section class="view on" id="view-lib">
+    <div class="card">
+      <div class="row">
+        <button class="btn" id="btnImport">导入文献（TXT / PDF）</button>
+      </div>
+      <input type="file" id="fileInput" multiple accept=".txt,.md,.pdf" style="display:none">
+      <div class="prog" id="prog"><i></i></div>
+      <p class="muted" style="margin-top:8px">TXT / Markdown 直接解析；PDF 提取文本层（扫描件暂不支持 OCR）。全部数据仅保存在手机本机。</p>
+    </div>
+    <div class="card">
+      <h2>我的文献 <span class="badge" id="libCount">0</span></h2>
+      <div id="docList"><div class="empty">还没有文献。点上方按钮导入第一批吧。</div></div>
+    </div>
+    <div class="card">
+      <h2>知识库统计</h2>
+      <div class="kv"><span>文献篇数</span><b id="stDocs">0</b></div>
+      <div class="kv"><span>知识分块</span><b id="stChunks">0</b></div>
+      <div class="kv"><span>词条索引</span><b id="stTerms">0</b></div>
+      <div class="kv"><span>存储占用（约）</span><b id="stSize">—</b></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn ghost sm" id="btnExport">导出库（JSON 备份）</button>
+        <button class="btn ghost sm" id="btnWipe">清空知识库</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 问答 ═══════════ -->
+  <section class="view" id="view-qa">
+    <div class="card">
+      <h2>问一下你的库</h2>
+      <div class="row">
+        <input type="text" id="qInput" placeholder="例如： Transformer 注意力机制说了什么">
+        <button class="btn sm" id="btnAsk" style="flex:0 0 auto">提问</button>
+      </div>
+      <div class="chiprow" style="margin-top:8px">
+        <span class="chip" data-q="本文库的核心主题是什么">核心主题</span>
+        <span class="chip" data-q="研究方法有哪些">研究方法</span>
+        <span class="chip" data-q="主要结论是什么">主要结论</span>
+      </div>
+    </div>
+    <div id="qaResult"></div>
+  </section>
+
+  <!-- ═══════════ 报告 ═══════════ -->
+  <section class="view" id="view-report">
+    <div class="card">
+      <h2>生成 PPT 报告</h2>
+      <p class="muted" style="margin-bottom:10px">按你的要求从知识库组织材料，生成可在 WPS / Office / Keynote 再编辑的 .pptx 文件。</p>
+      <label class="muted">报告主题（将按此检索知识库）</label>
+      <input type="text" id="rTopic" placeholder="例如：注意力机制" style="margin:6px 0 10px">
+      <div class="row">
+        <div>
+          <label class="muted">受众</label>
+          <select id="rAudience" style="margin:6px 0 10px">
+            <option>组会汇报</option><option>课程汇报</option><option>管理层简报</option><option>公开分享</option>
+          </select>
+        </div>
+        <div>
+          <label class="muted">正文页数</label>
+          <select id="rPages" style="margin:6px 0 10px">
+            <option>5</option><option selected>8</option><option>10</option><option>12</option>
+          </select>
+        </div>
+      </div>
+      <label class="muted">结构模板</label>
+      <select id="rTpl" style="margin:6px 0 12px">
+        <option value="imrad">学术 IMRAD（背景→方法→证据→讨论→结论）</option>
+        <option value="topic">主题分段（主题→要点→小结）</option>
+      </select>
+      <button class="btn block" id="btnReport">生成报告并导出 .pptx</button>
+      <div class="prog" id="rProg"><i></i></div>
+      <p class="muted" style="margin-top:8px">导出后可通过系统分享面板发送或保存。生成完全在本机完成。</p>
+    </div>
+    <div class="card" id="rSummary" style="display:none">
+      <h2>本次报告材料</h2>
+      <div id="rSummaryBody"></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 阅读器 ═══════════ -->
+  <section class="view" id="view-doc">
+    <div class="card">
+      <div class="row">
+        <div style="flex:1;min-width:0">
+          <div class="t" id="dvTitle" style="font-weight:600;font-size:15px">—</div>
+          <div class="muted" id="dvMeta">—</div>
+        </div>
+        <button class="btn ghost sm" id="btnSum" style="flex:0 0 auto">生成摘要</button>
+      </div>
+    </div>
+    <div class="card" id="dvSumBox" style="display:none">
+      <h2>抽取式摘要 <span class="badge">TextRank</span></h2>
+      <div class="snip" id="dvSum"></div>
+    </div>
+    <div class="card">
+      <h2>原文分块预览</h2>
+      <div id="dvChunks"></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 设置 ═══════════ -->
+  <section class="view" id="view-set">
+    <div class="card">
+      <h2>数据与隐私</h2>
+      <div class="kv"><span>数据存储</span><b>手机本机</b></div>
+      <div class="kv"><span>联网需求</span><b>无 · 全离线可用</b></div>
+      <div class="kv"><span>账号体系</span><b>无</b></div>
+      <div class="kv"><span>版本</span><b id="stVersion">1.0.0 (10)</b></div>
+    </div>
+    <div class="card">
+      <h2>关于本版</h2>
+      <p class="muted">V1.0 为确定性算法 MVP：关键词 + 简式向量双路检索、TextRank 抽取式摘要、PPTX 报告导出。端侧神经网络（语义 Embedding 模型、小模型 LLM、OCR）按路线图在后续版本接入，届时摘要与问答将升级为生成式并支持扫描件。</p>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button class="on" data-v="view-lib"><svg viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M14 3v5h5"/></svg>文献库</button>
+  <button data-v="view-qa"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>问答</button>
+  <button data-v="view-report"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10h8M8 14h5"/></svg>报告</button>
+  <button data-v="view-set"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>设置</button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/pdfjs/pdf.min.js"></script>
+<script src="vendor/pptxgen.bundle.js"></script>
+<script>
+"use strict";
+/* ═══════════ 基础 ═══════════ */
+const $ = (s) => document.querySelector(s);
+const APP_VERSION = "1.0.0", VERSION_CODE = 10;
+const CHUNK_SIZE = 320, CHUNK_OVERLAP = 60, MAX_CHUNKS_PER_DOC = 400;
+let DOC_INDEX = [];      // {id,title,src,pages,importedAt,chunks:[{text,page,tf:Map,len}],abstract}
+let SEARCH_TERMS = null; // Map term -> df
+let toastTimer = null;
+
+function toast(msg, ms = 2200) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("on"), ms);
+}
+function showView(id) {
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("on"));
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.v === id));
+  $("#" + id).classList.add("on");
+  if (id === "view-lib") renderLib();
+}
+document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => showView(b.dataset.v)));
+document.querySelectorAll(".chip[data-q]").forEach(c => c.addEventListener("click", () => { $("#qInput").value = c.dataset.q; ask(); }));
+
+/* ═══════════ 存储 ═══════════ */
+const STORE_KEY = "litkb.library.v1";
+function loadLib() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    DOC_INDEX = arr.map(d => ({ ...d, chunks: d.chunks.map(c => ({ ...c, tf: new Map(c.tf) })) }));
+  } catch (e) { console.warn("load failed", e); }
+}
+function saveLib() {
+  try {
+    const arr = DOC_INDEX.map(d => ({ ...d, chunks: d.chunks.map(c => ({ text: c.text, page: c.page, tf: [...c.tf], len: c.len })) }));
+    localStorage.setItem(STORE_KEY, JSON.stringify(arr));
+    return true;
+  } catch (e) {
+    toast("保存失败：库过大，请删除部分文献后重试");
+    return false;
+  }
+}
+
+/* ═══════════ 中文分词与索引 ═══════════ */
+const STOP = new Set("的 了 是 在 我 有 和 就 不 人 都 一 一个 上 也 很 到 说 要 去 你 会 着 没有 看 好 自己 这 那 他 她 它 们 与 及 或 等 中 为 对 从 被 把 让 使 向 于 之 其 而 但 并 且 又 再 更 最 较 均 皆 所 者 之 后 前 时 中 内 外 下 上".split(/\s+/));
+function tokenize(text) {
+  const tokens = [];
+  const re = /[A-Za-z]{2,}|\d{2,}/g;
+  let m;
+  while ((m = re.exec(text)) !== null) tokens.push(m[0].toLowerCase());
+  // 中文 2-gram + 长词优先
+  const cjk = text.replace(/[^\u4e00-\u9fff]/g, " ");
+  for (const seg of cjk.split(/\s+/)) {
+    if (!seg) continue;
+    for (let i = 0; i < seg.length; i++) tokens.push(seg.substr(i, 2));
+    for (let i = 0; i + 2 < seg.length; i++) tokens.push(seg.substr(i, 3));
+  }
+  return tokens;
+}
+function termFilter(t) { return t.length >= 2 && !STOP.has(t); }
+function chunkText(text) {
+  const paras = text.split(/\n{2,}|(?<=。)\s*\n/).map(s => s.trim()).filter(s => s.length > 20);
+  const chunks = [];
+  let cur = "", pageEst = 1;
+  const src = paras.length ? paras : [text];
+  for (const p of src) {
+    if (cur && (cur.length + p.length > CHUNK_SIZE)) {
+      chunks.push(cur); cur = p.slice(0, CHUNK_SIZE);
+      if (p.length > CHUNK_SIZE) {
+        for (let i = CHUNK_SIZE - CHUNK_OVERLAP; i < p.length; i += CHUNK_SIZE - CHUNK_OVERLAP) {
+          if (chunks.length >= MAX_CHUNKS_PER_DOC) break;
+          chunks.push(p.slice(i, i + CHUNK_SIZE));
+        }
+        cur = "";
+      }
+    } else {
+      cur = (cur ? cur + "\n" : "") + p;
+      if (cur.length > CHUNK_SIZE) { chunks.push(cur.slice(0, CHUNK_SIZE)); cur = ""; }
+    }
+    if (chunks.length >= MAX_CHUNKS_PER_DOC) break;
+  }
+  if (cur && chunks.length < MAX_CHUNKS_PER_DOC) chunks.push(cur);
+  return chunks.map((t, i) => {
+    const toks = tokenize(t).filter(termFilter);
+    const tf = new Map();
+    for (const tk of toks) tf.set(tk, (tf.get(tk) || 0) + 1);
+    return { text: t, page: Math.min(1 + Math.floor((i * CHUNK_SIZE) / 1800), 9999), tf, len: toks.length || 1 };
+  });
+}
+function rebuildDf() {
+  SEARCH_TERMS = new Map();
+  for (const d of DOC_INDEX) {
+    const seen = new Set();
+    for (const c of d.chunks) for (const t of c.tf.keys()) if (!seen.has(t)) { seen.add(t); SEARCH_TERMS.set(t, (SEARCH_TERMS.get(t) || 0) + 1); }
+  }
+}
+
+/* ═══════════ 检索（关键词 BM25 + 简式向量 重叠度） ═══════════ */
+function search(query, topK = 6) {
+  rebuildDf();
+  const N = Math.max(1, DOC_INDEX.reduce((s, d) => s + d.chunks.length, 0));
+  const qTokens = [...new Set(tokenize(query).filter(termFilter))];
+  if (!qTokens.length) return [];
+  const avgLen = 60;
+  const results = [];
+  for (const d of DOC_INDEX) {
+    for (const c of d.chunks) {
+      let bm = 0, overlap = 0;
+      for (const t of qTokens) {
+        const f = c.tf.get(t); if (!f) continue;
+        const idf = Math.log(1 + (N - (SEARCH_TERMS.get(t) || 0) + 0.5) / ((SEARCH_TERMS.get(t) || 0) + 0.5));
+        bm += idf * (f * 2.2) / (f + 1.2 * (1 - 0.75 + 0.75 * c.len / avgLen));
+        overlap += 1;
+      }
+      const cov = overlap / qTokens.length;
+      const score = bm * 0.7 + cov * 30 * 0.3; // 双路融合
+      if (score > 0.01) results.push({ doc: d, chunk: c, score });
+    }
+  }
+  results.sort((a, b) => b.score - a.score);
+  return results.slice(0, topK);
+}
+
+/* ═══════════ TextRank 抽取式摘要 ═══════════ */
+function summarize(docId, maxSentences = 4) {
+  const d = DOC_INDEX.find(x => x.id === docId); if (!d) return null;
+  const sentLists = d.chunks.map(c => c.text.split(/(?<=[。！？.!?])\s*/).filter(s => s.length > 12 && s.length < 220));
+  const sents = [...new Set([].concat(...sentLists))].slice(0, 220);
+  if (sents.length <= maxSentences) return sents;
+  const vecs = sents.map(s => { const m = new Map(); for (const t of tokenize(s).filter(termFilter)) m.set(t, (m.get(t) || 0) + 1); return m; });
+  const sim = (a, b) => { let s = 0; for (const [t, f] of a) { const g = b.get(t); if (g) s += f * g; } const na = Math.sqrt([...a.values()].reduce((x, y) => x + y * y, 0)) || 1, nb = Math.sqrt([...b.values()].reduce((x, y) => x + y * y, 0)) || 1; return s / (na * nb); };
+  const W = sents.map(() => new Float64Array(sents.length));
+  for (let i = 0; i < sents.length; i++) for (let j = i + 1; j < sents.length; j++) { const v = sim(vecs[i], vecs[j]); if (v > 0.08) { W[i][j] = v; W[j][i] = v; } }
+  let rank = new Float64Array(sents.length).fill(1 / sents.length);
+  for (let it = 0; it < 24; it++) {
+    const nr = new Float64Array(sents.length);
+    for (let i = 0; i < sents.length; i++) {
+      const out = W[i].reduce((a, b) => a + b, 0);
+      for (let j = 0; j < sents.length; j++) {
+        if (i === j) continue;
+        if (out > 0) nr[j] += 0.85 * rank[i] * (W[i][j] / out);
+      }
+      nr[i] += 0.15 / sents.length;
+    }
+    rank = nr;
+  }
+  const idx = [...rank.keys()].sort((a, b) => rank[b] - rank[a]).slice(0, maxSentences).sort((a, b) => a - b);
+  return idx.map(i => sents[i]);
+}
+
+/* ═══════════ 导入：TXT / PDF ═══════════ */
+$("#btnImport").addEventListener("click", () => $("#fileInput").click());
+$("#fileInput").addEventListener("change", async (e) => {
+  const files = [...e.target.files]; e.target.value = "";
+  if (!files.length) return;
+  const prog = $("#prog"); prog.classList.add("on");
+  for (let i = 0; i < files.length; i++) {
+    prog.firstElementChild.style.width = Math.round(i / files.length * 100) + "%";
+    try { await importFile(files[i]); } catch (err) { console.error(err); toast("导入失败：" + files[i].name); }
+  }
+  prog.firstElementChild.style.width = "100%";
+  setTimeout(() => prog.classList.remove("on"), 600);
+  saveLib() && renderLib();
+  toast("导入完成");
+});
+async function importFile(f) {
+  const buf = await f.arrayBuffer();
+  let text = "", pages = 1;
+  if (/\.pdf$/i.test(f.name)) {
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    pages = pdf.numPages;
+    const parts = [];
+    for (let p = 1; p <= Math.min(pdf.numPages, 120); p++) {
+      const page = await pdf.getPage(p);
+      const tc = await page.getTextContent();
+      parts.push(tc.items.map(it => it.str).join(" "));
+    }
+    text = parts.join("\n\n");
+  } else {
+    text = new TextDecoder("utf-8").decode(buf);
+  }
+  text = text.replace(/\r/g, "").replace(/[ \t]+/g, " ").trim();
+  if (text.length < 50) throw new Error("too short");
+  const chunks = chunkText(text);
+  if (!chunks.length) throw new Error("no content");
+  DOC_INDEX.push({ id: "d" + Date.now() + Math.random().toString(36).slice(2, 6), title: f.name.replace(/\.[^.]+$/, ""), src: f.name, pages, importedAt: Date.now(), chunks, abstract: null });
+}
+
+/* ═══════════ 库视图 ═══════════ */
+function renderLib() {
+  const list = $("#docList");
+  $("#libCount").textContent = DOC_INDEX.length;
+  if (!DOC_INDEX.length) { list.innerHTML = '<div class="empty">还没有文献。点上方按钮导入第一批吧。</div>'; }
+  else {
+    list.innerHTML = "";
+    for (const d of DOC_INDEX) {
+      const div = document.createElement("div"); div.className = "item";
+      div.innerHTML = `<div class="info"><div class="t"></div><div class="m"></div></div><button class="del" title="删除">✕</button>`;
+      div.querySelector(".t").textContent = d.title;
+      div.querySelector(".m").textContent = `${d.chunks.length} 块 · ${d.pages || "?"} 页 · ${new Date(d.importedAt).toLocaleDateString()}`;
+      div.querySelector(".info").addEventListener("click", () => openDoc(d.id));
+      div.querySelector(".del").addEventListener("click", () => {
+        DOC_INDEX = DOC_INDEX.filter(x => x.id !== d.id); saveLib(); renderLib(); toast("已删除");
+      });
+      list.appendChild(div);
+    }
+  }
+  const totalChunks = DOC_INDEX.reduce((s, d) => s + d.chunks.length, 0);
+  $("#stDocs").textContent = DOC_INDEX.length;
+  $("#stChunks").textContent = totalChunks;
+  rebuildDf(); $("#stTerms").textContent = SEARCH_TERMS ? SEARCH_TERMS.size : 0;
+  let bytes = 0; try { bytes = (localStorage.getItem(STORE_KEY) || "").length * 2; } catch (e) {}
+  $("#stSize").textContent = bytes > 1048576 ? (bytes / 1048576).toFixed(1) + " MB" : Math.round(bytes / 1024) + " KB";
+}
+$("#btnWipe").addEventListener("click", () => {
+  if (!DOC_INDEX.length) return toast("库已是空的");
+  if (confirm("确定清空全部文献与索引？此操作不可恢复。")) { DOC_INDEX = []; saveLib(); renderLib(); toast("已清空"); }
+});
+$("#btnExport").addEventListener("click", () => {
+  if (!DOC_INDEX.length) return toast("库为空");
+  const arr = DOC_INDEX.map(d => ({ ...d, chunks: d.chunks.map(c => ({ text: c.text, page: c.page, tf: [...c.tf], len: c.len })) }));
+  const blob = new Blob([JSON.stringify({ version: APP_VERSION, exportedAt: Date.now(), library: arr }, null, 1)], { type: "application/json" });
+  downloadBlob(blob, "文献知识库备份-" + new Date().toISOString().slice(0, 10) + ".json");
+});
+function downloadBlob(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800);
+}
+
+/* ═══════════ 阅读器 ═══════════ */
+let curDocId = null;
+function openDoc(id) {
+  curDocId = id;
+  const d = DOC_INDEX.find(x => x.id === id); if (!d) return;
+  $("#dvTitle").textContent = d.title;
+  $("#dvMeta").textContent = `${d.src || ""} · ${d.pages || "?"} 页 · 导入于 ${new Date(d.importedAt).toLocaleString()}`;
+  $("#dvSumBox").style.display = "none";
+  const box = $("#dvChunks"); box.innerHTML = "";
+  d.chunks.slice(0, 60).forEach((c, i) => {
+    const p = document.createElement("div"); p.className = "snip";
+    p.innerHTML = `<span class="cite">第 ${c.page} 页 · 块 ${i + 1}</span> `;
+    p.appendChild(document.createTextNode(c.text.slice(0, 180) + (c.text.length > 180 ? "…" : "")));
+    box.appendChild(p);
+  });
+  showView("view-doc");
+}
+$("#btnSum").addEventListener("click", () => {
+  if (!curDocId) return;
+  toast("正在计算摘要…", 1200);
+  setTimeout(() => {
+    const sents = summarize(curDocId, 4);
+    const box = $("#dvSumBox"); box.style.display = "block";
+    $("#dvSum").textContent = sents ? sents.join("") : "（本文过短，无需摘要）";
+  }, 60);
+});
+
+/* ═══════════ 问答 ═══════════ */
+$("#btnAsk").addEventListener("click", ask);
+$("#qInput").addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
+function esc(s) { return s.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch])); }
+function hlSnippet(text, qTokens) {
+  let html = esc(text.slice(0, 200) + (text.length > 200 ? "…" : ""));
+  for (const t of qTokens.slice(0, 8)) {
+    if (t.length < 2) continue;
+    const safe = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    html = html.replace(new RegExp(safe, "gi"), (m) => `<b>${m}</b>`);
+  }
+  return html;
+}
+function ask() {
+  const q = $("#qInput").value.trim();
+  const box = $("#qaResult");
+  if (!q) return toast("先输入问题");
+  if (!DOC_INDEX.length) { box.innerHTML = '<div class="card empty">库还是空的，先去「文献库」导入。</div>'; return; }
+  const hits = search(q, 6);
+  if (!hits.length) { box.innerHTML = '<div class="card empty">库里没有找到相关内容，换个问法试试。</div>'; return; }
+  const qTokens = [...new Set(tokenize(q).filter(termFilter))];
+  box.innerHTML = `<div class="card"><h2>依据库内原文（按相关度排序）</h2>${
+    hits.map((h, i) => `<div class="snip"><span class="cite">[${i + 1}] ${esc(h.doc.title)} · 第 ${h.chunk.page} 页</span><br>${hlSnippet(h.chunk.text, qTokens)}</div>`).join("")
+  }</div>`;
+  box.scrollIntoView({ behavior: "smooth" });
+}
+
+/* ═══════════ 报告生成（PptxGenJS） ═══════════ */
+$("#btnReport").addEventListener("click", async () => {
+  const topic = $("#rTopic").value.trim() || "知识库综述";
+  const pages = parseInt($("#rPages").value, 10);
+  const tpl = $("#rTpl").value;
+  const audience = $("#rAudience").value;
+  if (!DOC_INDEX.length) return toast("库还是空的，先导入文献");
+  const btn = $("#btnReport"); btn.disabled = true; btn.textContent = "正在检索与组织材料…";
+  const prog = $("#rProg"); prog.classList.add("on"); prog.firstElementChild.style.width = "12%";
+
+  setTimeout(async () => {
+    try {
+      const hits = search(topic, Math.max(12, pages * 3));
+      if (!hits.length) throw new Error("库中未找到与主题相关的内容");
+      prog.firstElementChild.style.width = "35%";
+      const outline = buildOutline(topic, audience, pages, tpl, hits);
+      prog.firstElementChild.style.width = "60%";
+      const pres = await renderPptx(topic, audience, outline, hits);
+      prog.firstElementChild.style.width = "92%";
+      const name = `报告-${topic}-${new Date().toISOString().slice(0, 10)}.pptx`;
+      const b64 = await pres.write({ outputType: "base64" });
+      const byteStr = atob(b64); const bytes = new Uint8Array(byteStr.length);
+      for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i);
+      downloadBlob(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" }), name);
+      prog.firstElementChild.style.width = "100%";
+      // 材料摘要卡
+      $("#rSummary").style.display = "block";
+      $("#rSummaryBody").innerHTML = outline.filter(s => s.hits && s.hits.length).map(s =>
+        `<div class="snip"><b>${esc(s.title)}</b><br>${s.hits.map(h => `<span class="cite">${esc(h.doc.title)} · P${h.chunk.page}</span>`).join(" ")}</div>`).join("");
+      setTimeout(() => prog.classList.remove("on"), 600);
+      toast("报告已生成并通过系统下载导出");
+    } catch (err) {
+      toast(err.message || "生成失败");
+      prog.classList.remove("on");
+    } finally {
+      btn.disabled = false; btn.textContent = "生成报告并导出 .pptx";
+    }
+  }, 80);
+});
+
+function buildOutline(topic, audience, pages, tpl, hits) {
+  const sections = [];
+  sections.push({ title: "研究背景", want: tpl === "imrad" ? ["背景", "问题", "研究", "现状", "动机"] : ["主题", "概念", "定义"] });
+  if (tpl === "imrad") {
+    sections.push({ title: "研究方法", want: ["方法", "模型", "实验", "数据", "框架", "算法"] });
+    sections.push({ title: "主要证据与发现", want: ["结果", "发现", "性能", "提升", "准确", "证据"] });
+    sections.push({ title: "讨论与局限", want: ["局限", "不足", "挑战", "未来", "风险"] });
+    sections.push({ title: "结论与展望", want: ["结论", "总结", "贡献", "意义"] });
+  } else {
+    for (let i = 1; i <= Math.max(1, pages - 2); i++) sections.push({ title: `要点 ${i}`, want: [] });
+    sections.push({ title: "小结", want: ["总结", "结论"] });
+  }
+  // 为每个 section 从 hits 里按关键词偏好分配材料（贪心，不重复）
+  const pool = [...hits];
+  const taken = new Set();
+  for (const s of sections) {
+    s.hits = [];
+    const scored = pool.map(h => {
+      let sc = h.score;
+      const text = h.chunk.text;
+      if (s.want.length) { for (const w of s.want) if (text.includes(w)) sc += 2.5; }
+      return { h, sc };
+    }).sort((a, b) => b.sc - a.sc);
+    for (const { h } of scored) {
+      if (s.hits.length >= 3) break;
+      const key = h.chunk.text.slice(0, 40);
+      if (taken.has(key)) continue;
+      taken.add(key); s.hits.push(h);
+    }
+  }
+  return sections;
+}
+
+async function renderPptx(topic, audience, outline, hits) {
+  const pptx = new PptxGenJS();
+  pptx.defineLayout({ name: "W169", width: 13.333, height: 7.5 });
+  pptx.layout = "W169";
+  pptx.author = "文献知识库"; pptx.company = "Local Knowledge Base";
+  const ACC = "B05A2A", INK = "14202E", MUT = "6B7686", LINE = "E2DDD6", WASH = "F4EFE8";
+
+  const addTitle = (slide, kicker, title) => {
+    slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.333, h: 0.14, fill: { color: ACC } });
+    slide.addText(kicker, { x: 0.7, y: 0.42, w: 8, h: 0.3, fontSize: 11, color: ACC, charSpacing: 2, fontFace: "Arial" });
+    slide.addText(title, { x: 0.7, y: 0.72, w: 11.9, h: 0.75, fontSize: 27, bold: true, color: INK, fontFace: "Microsoft YaHei" });
+  };
+  const bulletsFrom = (h, n) => {
+    const text = h.chunk.text.replace(/\s+/g, " ");
+    const parts = text.split(/(?<=[。；;])/).map(s => s.trim()).filter(s => s.length > 8);
+    const out = []; let cur = "";
+    for (const p of parts) { if ((cur + p).length > 90) { if (cur) out.push(cur); cur = p; } else cur += p; if (out.length >= n) break; }
+    if (cur && out.length < n) out.push(cur);
+    return out.slice(0, n).map(s => ({ text: s.length > 96 ? s.slice(0, 94) + "…" : s, options: { bullet: { code: "2022" }, breakLine: true } }));
+  };
+
+  // 封面
+  const cover = pptx.addSlide();
+  cover.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.333, h: 7.5, fill: { color: INK } });
+  cover.addShape(pptx.ShapeType.rect, { x: 0, y: 4.62, w: 13.333, h: 0.06, fill: { color: ACC } });
+  cover.addText("LOCAL KNOWLEDGE REPORT", { x: 0.9, y: 2.35, w: 8, h: 0.35, fontSize: 12, color: ACC, charSpacing: 3, fontFace: "Arial" });
+  cover.addText(topic, { x: 0.9, y: 2.75, w: 11.5, h: 1.1, fontSize: 40, bold: true, color: "FFFFFF", fontFace: "Microsoft YaHei" });
+  cover.addText(`基于个人文献知识库 · ${DOC_INDEX.length} 篇文献 · 面向${audience}`, { x: 0.9, y: 3.95, w: 11, h: 0.4, fontSize: 14, color: "B8C0C8", fontFace: "Microsoft YaHei" });
+  cover.addText(new Date().toLocaleDateString("zh-CN"), { x: 0.9, y: 4.85, w: 6, h: 0.35, fontSize: 12, color: "88909A", fontFace: "Arial" });
+
+  // 目录
+  const toc = pptx.addSlide();
+  addTitle(toc, "AGENDA", "目录");
+  toc.addText(outline.map((s, i) => ({ text: `${i + 1}  ${s.title}`, options: { breakLine: true, fontSize: 16, color: INK, breakLine: true } })),
+    { x: 0.9, y: 1.9, w: 11, h: 4.6, lineSpacingMultiple: 1.5, fontFace: "Microsoft YaHei" });
+
+  // 正文
+  for (const s of outline) {
+    const slide = pptx.addSlide();
+    addTitle(slide, "CONTENT", s.title);
+    const items = [];
+    (s.hits || []).forEach(h => { items.push(...bulletsFrom(h, 3)); });
+    if (!items.length) items.push({ text: "（本节暂未检索到足够材料，可扩充知识库后重新生成）", options: { color: MUT, breakLine: true } });
+    slide.addText(items, { x: 0.9, y: 1.85, w: 11.5, h: 4.7, fontSize: 14.5, color: "2A3644", lineSpacingMultiple: 1.35, valign: "top", fontFace: "Microsoft YaHei" });
+    const cites = [...new Set((s.hits || []).map(h => `${h.doc.title} · P${h.chunk.page}`))];
+    if (cites.length) slide.addText("来源：" + cites.join("；"), { x: 0.9, y: 6.75, w: 11.5, h: 0.4, fontSize: 9.5, color: MUT, fontFace: "Microsoft YaHei" });
+  }
+
+  // 参考页
+  const ref = pptx.addSlide();
+  addTitle(ref, "REFERENCES", "引用来源");
+  const uniq = [...new Map(hits.map(h => [h.doc.id + ":" + h.chunk.page, h])).values()].slice(0, 14);
+  ref.addText(uniq.map((h, i) => ({ text: `[${i + 1}] ${h.doc.title}（${h.src || "本机文献"}）· 第 ${h.chunk.page} 页`, options: { breakLine: true } })),
+    { x: 0.9, y: 1.9, w: 11.5, h: 4.8, fontSize: 13, color: "2A3644", lineSpacingMultiple: 1.5, fontFace: "Microsoft YaHei" });
+
+  // 结尾
+  const end = pptx.addSlide();
+  end.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.333, h: 7.5, fill: { color: INK } });
+  end.addText("谢谢观看", { x: 0.9, y: 3.1, w: 11, h: 0.9, fontSize: 34, bold: true, color: "FFFFFF", fontFace: "Microsoft YaHei" });
+  end.addText("本报告由本机文献知识库生成 · 引用均可回溯原文", { x: 0.9, y: 4.05, w: 11, h: 0.4, fontSize: 13, color: "B8C0C8", fontFace: "Microsoft YaHei" });
+  return pptx;
+}
+
+/* ═══════════ init ═══════════ */
+if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdfjs/pdf.worker.min.js";
+$("#stVersion").textContent = `${APP_VERSION} (${VERSION_CODE})`;
+loadLib(); renderLib();
+/* PWA：浏览器环境下注册 Service Worker（Capacitor 壳内自动跳过） */
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW register skipped", e));
+}
+</script>
+</body>
+</html>
