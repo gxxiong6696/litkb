@@ -1,5 +1,5 @@
 /* 文献知识库 Service Worker — cache-first, 版本与 APP_VERSION/versionCode 同步 */
-const CACHE_NAME = "litkb-v10-20261001-1705";
+const CACHE_NAME = "litkb-v11-20261001-2230";
 const ASSETS = [
   "./",
   "./index.html",
