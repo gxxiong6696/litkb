@@ -788,13 +788,14 @@ async function dsChat(messages, maxTokens = 4000) {
   };
   let data = await callOnce(maxTokens);
   let txt = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-  // deepseek-flash 是推理模型：思维链可能耗尽 token 预算导致正文为空 → 自动加大预算重试一次
-  if (!txt) {
+  // deepseek-flash 是推理模型：思维链可能耗尽 token 预算导致正文为空 → 自动加大预算重试，最多 3 次
+  let tries = 0;
+  while (!txt && tries < 3) {
     const choice = data.choices && data.choices[0];
-    if (choice && choice.finish_reason === "length" && choice.message && choice.message.reasoning_content) {
-      data = await callOnce(maxTokens * 3);
-      txt = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-    }
+    if (!(choice && choice.finish_reason === "length" && choice.message && choice.message.reasoning_content)) break;
+    tries++;
+    data = await callOnce(maxTokens * (2 + tries * 2));
+    txt = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
   }
   if (!txt) throw new Error("响应无内容（可重试）");
   return txt.trim();
