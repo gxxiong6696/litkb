@@ -226,7 +226,7 @@
         <button class="btn ghost sm" id="aiClear">清除密钥</button>
       </div>
       <div class="snip" id="aiTestResult" style="display:none;margin-top:10px"></div>
-      <p class="muted" style="margin-top:8px">默认即可用：只需填写 sk- 密钥并打开开关。模型名默认 deepseek-flash（在官方接口自动映射为最快档实际执行；自定义接口按所填名称原样发送），可改为 deepseek-reasoner 等。启用后，提问 / 摘要 / 生成报告会把检索到的相关原文片段发送给你配置的接口，生成更连贯的结果，原文出处仍保留；密钥只保存在手机本机，直连不经任何中转；关闭开关即回到纯离线模式。</p>
+      <p class="muted" style="margin-top:8px">默认即可用：只需填写 sk- 密钥并打开开关。模型名默认 deepseek-flash（官方现行模型名，直接调用；也可改为 deepseek-v4-pro 等其他官方模型）。启用后，提问 / 摘要 / 生成报告会把检索到的相关原文片段发送给你配置的接口，生成更连贯的结果，原文出处仍保留；密钥只保存在手机本机，直连不经任何中转；关闭开关即回到纯离线模式。</p>
     </div>
     <div class="card">
       <h2>数据与隐私</h2>
@@ -707,13 +707,8 @@ const AI_KEY = "litkb_ai_cfg_v1";
 let AI = { key: "", model: "deepseek-flash", base: "https://api.deepseek.com", enable: false };
 function loadAI() {
   try { const raw = localStorage.getItem(AI_KEY); if (raw) AI = { ...AI, ...JSON.parse(raw) }; } catch (e) {}
-  // 迁移：旧版默认值统一开为 deepseek-flash（官方接口下自动映射实际调用模型）
-  if (AI.base.replace(/\/$/, "") === "https://api.deepseek.com" && AI.model === "deepseek-chat") AI.model = "deepseek-flash";
-}
-function dsEffectiveModel() {
-  const base = (AI.base || "").replace(/\/$/, "");
-  if (base === "https://api.deepseek.com" && (AI.model || "").trim().toLowerCase() === "deepseek-flash") return "deepseek-chat";
-  return AI.model;
+  // 迁移：早期默认 deepseek-chat 统一升级为 deepseek-flash（官方现行模型名，直接调用）
+  if ((AI.model || "") === "deepseek-chat") AI.model = "deepseek-flash";
 }
 function saveAI() { localStorage.setItem(AI_KEY, JSON.stringify(AI)); }
 function aiReady() { return !!(AI.enable && AI.key); }
@@ -754,7 +749,7 @@ async function aiTest() {
     const reply = await dsChat([{ role: "user", content: "回复两个字：正常" }], 8);
     const ms = Date.now() - t0;
     box.style.color = "#1e6b3a";
-    box.textContent = "√ 连接成功 · " + AI.model + (dsEffectiveModel() !== AI.model ? "（实际调用 " + dsEffectiveModel() + "）" : "") + " · 延迟 " + ms + "ms · 模型回复：「" + reply.slice(0, 20) + "」。现在可在问答 / 摘要 / 报告中使用 AI 增强。";
+    box.textContent = "√ 连接成功 · " + AI.model + " · 延迟 " + ms + "ms · 模型回复：「" + reply.slice(0, 20) + "」。现在可在问答 / 摘要 / 报告中使用 AI 增强。";
   } catch (e) {
     box.style.color = "#8a4520";
     box.textContent = "× 连接失败：" + e.message + "。请检查：① Key 是否完整（sk- 开头）；② 余额是否充足；③ 网络能否访问 " + AI.base + "；④ Base URL / 模型名拼写。";
@@ -771,7 +766,7 @@ async function dsChat(messages, maxTokens = 900) {
     res = await fetch(AI.base + "/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + AI.key },
-      body: JSON.stringify({ model: dsEffectiveModel(), messages, temperature: 0.4, max_tokens: maxTokens, stream: false }),
+      body: JSON.stringify({ model: AI.model, messages, temperature: 0.4, max_tokens: maxTokens, stream: false }),
       signal: ctrl.signal
     });
   } catch (e) {
