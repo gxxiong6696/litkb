@@ -167,7 +167,10 @@
         <option value="imrad">学术 IMRAD（背景→方法→证据→讨论→结论）</option>
         <option value="topic">主题分段（主题→要点→小结）</option>
       </select>
-      <button class="btn block" id="btnReport">生成报告并导出 .pptx</button>
+      <div class="row" style="margin:6px 0 12px">
+        <button class="btn" id="btnReport" style="flex:1">导出 PPT</button>
+        <button class="btn ghost" id="btnDocx" style="flex:1">导出 Word 调研报告</button>
+      </div>
       <div class="prog" id="rProg"><i></i></div>
       <p class="muted" style="margin-top:8px">导出后可通过系统分享面板发送或保存。生成完全在本机完成。</p>
     </div>
@@ -233,11 +236,11 @@
       <div class="kv"><span>数据存储</span><b>手机本机</b></div>
       <div class="kv"><span>联网需求</span><b>默认离线 · 云端增强可选</b></div>
       <div class="kv"><span>账号体系</span><b>无</b></div>
-      <div class="kv"><span>版本</span><b id="stVersion">1.1.0 (11)</b></div>
+      <div class="kv"><span>版本</span><b id="stVersion">1.2.0 (12)</b></div>
     </div>
     <div class="card">
       <h2>关于本版</h2>
-      <p class="muted">V1.1 在确定性算法基础上新增可选的 DeepSeek 云端增强（BYOK）：库问答升级为理解式回答、单篇摘要升级为生成式、报告要点升级为改写成稿，均保留页码溯源与离线兑底。端侧小模型与 OCR 按路线图在后续版本接入。</p>
+      <p class="muted">V1.2 新增 Word 调研报告导出（文章式正文、章节、引用表，可直接再编辑）；V1.1 在确定性算法基础上新增可选的 DeepSeek 云端增强（BYOK）：库问答升级为理解式回答、单篇摘要升级为生成式、报告要点升级为改写成稿，均保留页码溯源与离线兑底。端侧小模型与 OCR 按路线图在后续版本接入。</p>
     </div>
   </section>
 </main>
@@ -258,7 +261,7 @@
 "use strict";
 /* ═══════════ 基础 ═══════════ */
 const $ = (s) => document.querySelector(s);
-const APP_VERSION = "1.1.0", VERSION_CODE = 11;
+const APP_VERSION = "1.2.0", VERSION_CODE = 12;
 const CHUNK_SIZE = 320, CHUNK_OVERLAP = 60, MAX_CHUNKS_PER_DOC = 400;
 let DOC_INDEX = [];      // {id,title,src,pages,importedAt,chunks:[{text,page,tf:Map,len}],abstract}
 let SEARCH_TERMS = null; // Map term -> df
@@ -486,6 +489,80 @@ function downloadBlob(blob, name) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800);
 }
 
+async function aiReportProse(reportTopic, sectionTitle, hits) {
+  const ctx = hits.map((h, i) => `[${i + 1}] 《${h.doc.title}》第${h.chunk.page}页：${h.chunk.text}`).join("\n\n");
+  const sys = "你是调研报告撰稿人。基于资料片段撰写报告小节正文：中文，2 至 4 个自然段（合计 250 至 450 字），语言连贯、面向汇报读者；在引用资料处标注编号如 [1]；只依据资料，不添加资料外内容。只输出正文，不要标题和前言。";
+  try {
+    return await dsChat([{ role: "system", content: sys }, { role: "user", content: `报告主题：${reportTopic}\n小节标题：${sectionTitle}\n\n资料片段：\n${ctx}` }], 3000);
+  } catch (e) { return null; }
+}
+function docxEsc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function docxPara(text, opts = {}) {
+  const runs = [];
+  const re = /(\[\d{1,2}\])/g; let last = 0, m;
+  const push = (t, cite) => {
+    if (!t) return;
+    runs.push(cite
+      ? `<w:r><w:rPr><w:color w:val="8A4520"/><w:sz w:val="18"/><w:vertAlign w:val="superscript"/></w:rPr><w:t xml:space="preserve">${docxEsc(t)}</w:t></w:r>`
+      : `<w:r><w:rPr>${opts.bold ? "<w:b/>" : ""}</w:rPr><w:t xml:space="preserve">${docxEsc(t)}</w:t></w:r>`);
+  };
+  if (opts.parseCites) {
+    while ((m = re.exec(text)) !== null) { push(text.slice(last, m.index)); push(m[1], true); last = m.index + m[1].length; }
+    push(text.slice(last));
+  } else push(text);
+  return `<w:p><w:pPr>${opts.center ? '<w:jc w:val="center"/>' : ""}<w:ind w:firstLine="${opts.noIndent ? 0 : 480}"/><w:spacing w:line="360" w:lineRule="auto" w:after="120"/></w:pPr>${runs.join("")}</w:p>`;
+}
+async function buildDocx(topic, audience, outline, hits) {
+  const zip = new JSZip();
+  const uniqRefs = [...new Map(hits.map(h => [h.doc.id + ":" + h.chunk.page, h])).values()];
+  const refIndex = new Map(uniqRefs.map((h, i) => [h.doc.id + ":" + h.chunk.page, i + 1]));
+  const now = new Date();
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`;
+  const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPr><w:rFonts w:ascii="Times New Roman" w:eastAsia="宋体"/><w:sz w:val="24"/></w:rPr><w:pPr><w:spacing w:line="360" w:lineRule="auto"/></w:pPr></w:docDefaults><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:outlineLvl w:val="0"/><w:spacing w:before="360" w:after="200"/></w:pPr><w:rPr><w:rFonts w:eastAsia="黑体"/><w:b/><w:sz w:val="32"/><w:color w:val="14202E"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr><w:outlineLvl w:val="1"/><w:spacing w:before="280" w:after="140"/></w:pPr><w:rPr><w:rFonts w:eastAsia="黑体"/><w:b/><w:sz w:val="28"/><w:color w:val="14202E"/></w:rPr></w:style></w:styles>`;
+  const core = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>调研报告：${docxEsc(topic)}</dc:title><dc:creator>文献知识库</dc:creator><cp:lastModifiedBy>文献知识库</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">${now.toISOString()}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now.toISOString()}</dcterms:modified></cp:coreProperties>`;
+  const app = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>文献知识库 ${APP_VERSION}</Application></Properties>`;
+  let body = "";
+  body += docxPara(`调研报告：${topic}`, { center: true, bold: true, noIndent: true });
+  body += docxPara(`基于个人文献知识库（${DOC_INDEX.length} 篇文献）整理 · 面向${audience} · ${now.toLocaleDateString("zh-CN")}`, { center: true, noIndent: true });
+  body += docxPara(`摘要：本报告从本机文献知识库中检索与主题「${topic}」相关的原文材料，分 ${outline.filter(s => s.hits && s.hits.length).length} 节组织成文；全部论断均标注来源，可回溯原文页码。`, { noIndent: true });
+  let n = 0;
+  for (const s of outline) {
+    if (!(s.hits && s.hits.length)) continue;
+    n++;
+    body += `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="黑体"/><w:b/><w:sz w:val="32"/></w:rPr><w:t xml:space="preserve">${docxEsc(n + "　" + s.title)}</w:t></w:r></w:p>`;
+    if (s.aiProse) {
+      for (const para of s.aiProse.split(/\n{1,2}/).map(x => x.trim()).filter(Boolean)) {
+        body += docxPara(para, { parseCites: true });
+      }
+    } else {
+      const pts = s.aiPoints || [];
+      const merged = pts.length ? pts.join("") : (s.hits || []).map(h => h.chunk.text.replace(/\s+/g, "")).join("");
+      body += docxPara(merged.slice(0, 800), { parseCites: true });
+    }
+    const cites = [...new Set((s.hits || []).map(h => `${h.doc.title} · 第${h.chunk.page}页`))];
+    body += docxPara(`（本节来源：${cites.join("；")}）`);
+  }
+  body += `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="黑体"/><w:b/><w:sz w:val="32"/></w:rPr><w:t xml:space="preserve">引用来源</w:t></w:r></w:p>`;
+  uniqRefs.slice(0, 20).forEach((h) => {
+    const no = refIndex.get(h.doc.id + ":" + h.chunk.page);
+    body += docxPara(`[${no}] ${h.doc.title}（${h.src || "本机文献"}）· 第 ${h.chunk.page} 页`, { noIndent: true });
+  });
+  body += docxPara(`本报告由文献知识库 V${APP_VERSION} 在本机生成：检索自 ${DOC_INDEX.length} 篇文献，生成时间 ${now.toLocaleString("zh-CN")}。`, { noIndent: true });
+  const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1417" w:bottom="1440" w:left="1701"/></w:sectPr></w:body></w:document>`;
+  zip.file("[Content_Types].xml", contentTypes);
+  zip.file("_rels/.rels", rels);
+  zip.file("word/document.xml", document);
+  zip.file("word/_rels/document.xml.rels", docRels);
+  zip.file("word/styles.xml", styles);
+  zip.file("docProps/core.xml", core);
+  zip.file("docProps/app.xml", app);
+  return await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", compression: "DEFLATE" });
+}
+
 /* ═══════════ 阅读器 ═══════════ */
 let curDocId = null;
 function openDoc(id) {
@@ -543,7 +620,8 @@ function ask() {
 }
 
 /* ═══════════ 报告生成（PptxGenJS） ═══════════ */
-$("#btnReport").addEventListener("click", async () => {
+function handleReport(fmtArg) {
+  return (async () => {
   const topic = $("#rTopic").value.trim() || "知识库综述";
   const pages = parseInt($("#rPages").value, 10);
   const tpl = $("#rTpl").value;
@@ -553,6 +631,7 @@ $("#btnReport").addEventListener("click", async () => {
   const prog = $("#rProg"); prog.classList.add("on"); prog.firstElementChild.style.width = "8%";
   const useAI = aiReady();
   btn.textContent = useAI ? "正在检索并调用 AI 组织材料…" : "正在检索与组织材料…";
+  const fmt = fmtArg || "pptx";
 
   setTimeout(async () => {
     try {
@@ -567,31 +646,45 @@ $("#btnReport").addEventListener("click", async () => {
           prog.firstElementChild.style.width = (30 + Math.round((i / Math.max(1, secs.length)) * 50)) + "%";
           const pts = await aiSlidePoints(secs[i], secs[i].hits, topic + " - " + secs[i].title);
           if (pts) secs[i].aiPoints = pts;
+          if (fmt === "docx") {
+            const prose = await aiReportProse(topic, secs[i].title, secs[i].hits);
+            if (prose) secs[i].aiProse = prose;
+          }
         }
       }
       prog.firstElementChild.style.width = "88%";
-      const pres = await renderPptx(topic, audience, outline, hits);
-      prog.firstElementChild.style.width = "92%";
-      const name = `报告-${topic}-${new Date().toISOString().slice(0, 10)}.pptx`;
-      const b64 = await pres.write({ outputType: "base64" });
-      const byteStr = atob(b64); const bytes = new Uint8Array(byteStr.length);
-      for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i);
-      downloadBlob(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" }), name);
+      if (fmt === "docx") {
+        btn.textContent = "正在生成 Word 文档…";
+        prog.firstElementChild.style.width = "92%";
+        const blob = await buildDocx(topic, audience, outline, hits);
+        downloadBlob(blob, `调研报告-${topic}-${new Date().toISOString().slice(0, 10)}.docx`);
+      } else {
+        const pres = await renderPptx(topic, audience, outline, hits);
+        prog.firstElementChild.style.width = "92%";
+        const name = `报告-${topic}-${new Date().toISOString().slice(0, 10)}.pptx`;
+        const b64 = await pres.write({ outputType: "base64" });
+        const byteStr = atob(b64); const bytes = new Uint8Array(byteStr.length);
+        for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i);
+        downloadBlob(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" }), name);
+      }
       prog.firstElementChild.style.width = "100%";
       // 材料摘要卡
       $("#rSummary").style.display = "block";
       $("#rSummaryBody").innerHTML = outline.filter(s => s.hits && s.hits.length).map(s =>
         `<div class="snip"><b>${esc(s.title)}</b><br>${s.hits.map(h => `<span class="cite">${esc(h.doc.title)} · P${h.chunk.page}</span>`).join(" ")}</div>`).join("");
       setTimeout(() => prog.classList.remove("on"), 600);
-      toast(useAI ? "AI 增强报告已生成并导出" : "报告已生成并通过系统下载导出");
+      toast(fmt === "docx" ? "Word 调研报告已生成" : (useAI ? "AI 增强报告已生成并导出" : "报告已生成并通过系统下载导出"));
     } catch (err) {
       toast(err.message || "生成失败");
       prog.classList.remove("on");
     } finally {
-      btn.disabled = false; btn.textContent = "生成报告并导出 .pptx";
+      btn.disabled = false; btn.textContent = "导出 PPT";
     }
   }, 80);
-});
+  });
+}
+$("#btnReport").addEventListener("click", () => handleReport("pptx"));
+$("#btnDocx").addEventListener("click", () => handleReport("docx"));
 
 function buildOutline(topic, audience, pages, tpl, hits) {
   const sections = [];
