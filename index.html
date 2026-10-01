@@ -6,11 +6,6 @@
 <title>文献知识库</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#B05A2A">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="文献知识库">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <style>
   :root {
     --bg: #faf9f7; --card: #ffffff; --ink: #14202e; --ink2: #3a4656; --ink3: #6b7686;
@@ -205,16 +200,43 @@
 
   <!-- ═══════════ 设置 ═══════════ -->
   <section class="view" id="view-set">
+    <div class="card" id="aiCard">
+      <h2>云端智能（DeepSeek · BYOK）</h2>
+      <div class="kv"><span>状态</span><b id="aiStatus">未配置</b></div>
+      <label class="muted">API Key（仅存本机，不上传）</label>
+      <div class="row" style="margin:6px 0 10px">
+        <input type="password" id="aiKey" placeholder="sk-..." autocomplete="off">
+        <button class="btn ghost sm" id="aiKeyToggle" style="flex:0 0 auto">显示</button>
+      </div>
+      <div class="row">
+        <div>
+          <label class="muted">模型名</label>
+          <input type="text" id="aiModel" style="margin:6px 0 10px">
+        </div>
+        <div>
+          <label class="muted">接口地址（Base URL）</label>
+          <input type="text" id="aiBase" style="margin:6px 0 10px">
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--ink2)">
+        <input type="checkbox" id="aiEnable" style="width:18px;height:18px"> 启用云端增强（问答 / 摘要 / 报告）
+      </label>
+      <div class="row" style="margin-top:10px">
+        <button class="btn ghost sm" id="aiTest">测试连接</button>
+        <button class="btn ghost sm" id="aiClear">清除密钥</button>
+      </div>
+      <p class="muted" style="margin-top:8px">启用后，提问 / 摘要 / 生成报告会把检索到的相关原文片段发送给你配置的 DeepSeek 接口，生成更连贯的回答与成稿，原文出处仍保留；密钥只保存在手机本机，直连官方接口不经任何中转。关闭开关即回到纯离线模式。模型名默认 deepseek-chat（官方最快档），可改为 deepseek-reasoner 等官方模型。</p>
+    </div>
     <div class="card">
       <h2>数据与隐私</h2>
       <div class="kv"><span>数据存储</span><b>手机本机</b></div>
-      <div class="kv"><span>联网需求</span><b>无 · 全离线可用</b></div>
+      <div class="kv"><span>联网需求</span><b>默认离线 · 云端增强可选</b></div>
       <div class="kv"><span>账号体系</span><b>无</b></div>
-      <div class="kv"><span>版本</span><b id="stVersion">1.0.0 (10)</b></div>
+      <div class="kv"><span>版本</span><b id="stVersion">1.1.0 (11)</b></div>
     </div>
     <div class="card">
       <h2>关于本版</h2>
-      <p class="muted">V1.0 为确定性算法 MVP：关键词 + 简式向量双路检索、TextRank 抽取式摘要、PPTX 报告导出。端侧神经网络（语义 Embedding 模型、小模型 LLM、OCR）按路线图在后续版本接入，届时摘要与问答将升级为生成式并支持扫描件。</p>
+      <p class="muted">V1.1 在确定性算法基础上新增可选的 DeepSeek 云端增强（BYOK）：库问答升级为理解式回答、单篇摘要升级为生成式、报告要点升级为改写成稿，均保留页码溯源与离线兑底。端侧小模型与 OCR 按路线图在后续版本接入。</p>
     </div>
   </section>
 </main>
@@ -235,7 +257,7 @@
 "use strict";
 /* ═══════════ 基础 ═══════════ */
 const $ = (s) => document.querySelector(s);
-const APP_VERSION = "1.0.0", VERSION_CODE = 10;
+const APP_VERSION = "1.1.0", VERSION_CODE = 11;
 const CHUNK_SIZE = 320, CHUNK_OVERLAP = 60, MAX_CHUNKS_PER_DOC = 400;
 let DOC_INDEX = [];      // {id,title,src,pages,importedAt,chunks:[{text,page,tf:Map,len}],abstract}
 let SEARCH_TERMS = null; // Map term -> df
@@ -482,10 +504,11 @@ function openDoc(id) {
 }
 $("#btnSum").addEventListener("click", () => {
   if (!curDocId) return;
-  toast("正在计算摘要…", 1200);
-  setTimeout(() => {
-    const sents = summarize(curDocId, 4);
+  toast("正在生成摘要…", 1200);
+  setTimeout(async () => {
     const box = $("#dvSumBox"); box.style.display = "block";
+    if (aiReady()) { await aiSummarize(curDocId, $("#dvSum")); return; }
+    const sents = summarize(curDocId, 4);
     $("#dvSum").textContent = sents ? sents.join("") : "（本文过短，无需摘要）";
   }, 60);
 });
@@ -514,6 +537,7 @@ function ask() {
   box.innerHTML = `<div class="card"><h2>依据库内原文（按相关度排序）</h2>${
     hits.map((h, i) => `<div class="snip"><span class="cite">[${i + 1}] ${esc(h.doc.title)} · 第 ${h.chunk.page} 页</span><br>${hlSnippet(h.chunk.text, qTokens)}</div>`).join("")
   }</div>`;
+  if (aiReady()) aiAnswer(q, hits, qTokens);
   box.scrollIntoView({ behavior: "smooth" });
 }
 
@@ -524,16 +548,27 @@ $("#btnReport").addEventListener("click", async () => {
   const tpl = $("#rTpl").value;
   const audience = $("#rAudience").value;
   if (!DOC_INDEX.length) return toast("库还是空的，先导入文献");
-  const btn = $("#btnReport"); btn.disabled = true; btn.textContent = "正在检索与组织材料…";
-  const prog = $("#rProg"); prog.classList.add("on"); prog.firstElementChild.style.width = "12%";
+  const btn = $("#btnReport"); btn.disabled = true;
+  const prog = $("#rProg"); prog.classList.add("on"); prog.firstElementChild.style.width = "8%";
+  const useAI = aiReady();
+  btn.textContent = useAI ? "正在检索并调用 AI 组织材料…" : "正在检索与组织材料…";
 
   setTimeout(async () => {
     try {
       const hits = search(topic, Math.max(12, pages * 3));
       if (!hits.length) throw new Error("库中未找到与主题相关的内容");
-      prog.firstElementChild.style.width = "35%";
+      prog.firstElementChild.style.width = "30%";
       const outline = buildOutline(topic, audience, pages, tpl, hits);
-      prog.firstElementChild.style.width = "60%";
+      if (useAI) {
+        const secs = outline.filter(s => s.hits && s.hits.length);
+        for (let i = 0; i < secs.length; i++) {
+          btn.textContent = `AI 成稿中（${i + 1}/${secs.length}）…`;
+          prog.firstElementChild.style.width = (30 + Math.round((i / Math.max(1, secs.length)) * 50)) + "%";
+          const pts = await aiSlidePoints(secs[i], secs[i].hits, topic + " - " + secs[i].title);
+          if (pts) secs[i].aiPoints = pts;
+        }
+      }
+      prog.firstElementChild.style.width = "88%";
       const pres = await renderPptx(topic, audience, outline, hits);
       prog.firstElementChild.style.width = "92%";
       const name = `报告-${topic}-${new Date().toISOString().slice(0, 10)}.pptx`;
@@ -547,7 +582,7 @@ $("#btnReport").addEventListener("click", async () => {
       $("#rSummaryBody").innerHTML = outline.filter(s => s.hits && s.hits.length).map(s =>
         `<div class="snip"><b>${esc(s.title)}</b><br>${s.hits.map(h => `<span class="cite">${esc(h.doc.title)} · P${h.chunk.page}</span>`).join(" ")}</div>`).join("");
       setTimeout(() => prog.classList.remove("on"), 600);
-      toast("报告已生成并通过系统下载导出");
+      toast(useAI ? "AI 增强报告已生成并导出" : "报告已生成并通过系统下载导出");
     } catch (err) {
       toast(err.message || "生成失败");
       prog.classList.remove("on");
@@ -631,7 +666,11 @@ async function renderPptx(topic, audience, outline, hits) {
     const slide = pptx.addSlide();
     addTitle(slide, "CONTENT", s.title);
     const items = [];
-    (s.hits || []).forEach(h => { items.push(...bulletsFrom(h, 3)); });
+    if (s.aiPoints && s.aiPoints.length) {
+      s.aiPoints.forEach(pt => items.push({ text: String(pt), options: { bullet: { code: "2022" }, breakLine: true } }));
+    } else {
+      (s.hits || []).forEach(h => { items.push(...bulletsFrom(h, 3)); });
+    }
     if (!items.length) items.push({ text: "（本节暂未检索到足够材料，可扩充知识库后重新生成）", options: { color: MUT, breakLine: true } });
     slide.addText(items, { x: 0.9, y: 1.85, w: 11.5, h: 4.7, fontSize: 14.5, color: "2A3644", lineSpacingMultiple: 1.35, valign: "top", fontFace: "Microsoft YaHei" });
     const cites = [...new Set((s.hits || []).map(h => `${h.doc.title} · P${h.chunk.page}`))];
@@ -656,10 +695,142 @@ async function renderPptx(topic, audience, outline, hits) {
 /* ═══════════ init ═══════════ */
 if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdfjs/pdf.worker.min.js";
 $("#stVersion").textContent = `${APP_VERSION} (${VERSION_CODE})`;
-loadLib(); renderLib();
+loadLib(); renderLib(); initAI();
 /* PWA：浏览器环境下注册 Service Worker（Capacitor 壳内自动跳过） */
 if ("serviceWorker" in navigator && location.protocol === "https:") {
   navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW register skipped", e));
+}
+
+/* ═══════════ DeepSeek BYOK 云端增强 ═══════════ */
+const AI_KEY = "litkb_ai_cfg_v1";
+let AI = { key: "", model: "deepseek-chat", base: "https://api.deepseek.com", enable: false };
+function loadAI() {
+  try { const raw = localStorage.getItem(AI_KEY); if (raw) AI = { ...AI, ...JSON.parse(raw) }; } catch (e) {}
+}
+function saveAI() { localStorage.setItem(AI_KEY, JSON.stringify(AI)); }
+function aiReady() { return !!(AI.enable && AI.key); }
+function initAI() {
+  loadAI();
+  $("#aiKey").value = AI.key; $("#aiModel").value = AI.model; $("#aiBase").value = AI.base; $("#aiEnable").checked = AI.enable;
+  aiStatus();
+  $("#aiKeyToggle").addEventListener("click", () => {
+    const el = $("#aiKey"); el.type = el.type === "password" ? "text" : "password";
+    $("#aiKeyToggle").textContent = el.type === "password" ? "显示" : "隐藏";
+  });
+  ["#aiKey", "#aiModel", "#aiBase"].forEach(s => $(s).addEventListener("change", () => {
+    AI.key = $("#aiKey").value.trim(); AI.model = ($("#aiModel").value.trim() || "deepseek-chat"); AI.base = ($("#aiBase").value.trim() || "https://api.deepseek.com").replace(/\/$/, "");
+    saveAI(); aiStatus();
+  }));
+  $("#aiEnable").addEventListener("change", () => { AI.enable = $("#aiEnable").checked; saveAI(); aiStatus(); toast(AI.enable ? "云端增强已开启" : "已切换为纯离线模式"); });
+  $("#aiTest").addEventListener("click", aiTest);
+  $("#aiClear").addEventListener("click", () => {
+    if (!confirm("确定清除已保存的密钥？")) return;
+    AI.key = ""; AI.enable = false; saveAI();
+    $("#aiKey").value = ""; $("#aiEnable").checked = false; aiStatus(); toast("密钥已清除");
+  });
+}
+function aiStatus() {
+  const el = $("#aiStatus");
+  if (!AI.key) { el.textContent = "未配置"; return; }
+  el.textContent = AI.enable ? `已启用 · ${AI.model}` : `已配置（开关未开） · ${AI.model}`;
+}
+async function aiTest() {
+  AI.key = $("#aiKey").value.trim(); AI.model = ($("#aiModel").value.trim() || "deepseek-chat"); AI.base = ($("#aiBase").value.trim() || "https://api.deepseek.com").replace(/\/$/, ""); saveAI(); aiStatus();
+  if (!AI.key) return toast("先填入 API Key");
+  toast("正在测试连接…");
+  try {
+    const t0 = Date.now();
+    const reply = await dsChat([{ role: "user", content: "回复两个字：正常" }], 8);
+    toast(`连接正常 · ${AI.model} · ${Date.now() - t0}ms · 回复：${reply.slice(0, 12)}`, 3200);
+  } catch (e) { toast("连接失败：" + e.message, 3600); }
+}
+async function dsChat(messages, maxTokens = 900) {
+  let res;
+  try {
+    res = await fetch(AI.base + "/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + AI.key },
+      body: JSON.stringify({ model: AI.model, messages, temperature: 0.4, max_tokens: maxTokens, stream: false })
+    });
+  } catch (e) { throw new Error("网络不可达"); }
+  if (res.status === 401) throw new Error("密钥无效（401）");
+  if (res.status === 402) throw new Error("余额不足（402）");
+  if (res.status === 429) throw new Error("请求过快/限流（429）");
+  if (!res.ok) {
+    let msg = "HTTP " + res.status;
+    try { const j = await res.json(); if (j.error && j.error.message) msg += " " + j.error.message; } catch (e) {}
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  const txt = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+  if (!txt) throw new Error("响应无内容");
+  return txt.trim();
+}
+function buildCtx(hits) {
+  return hits.map((h, i) => `[${i + 1}] 《${h.doc.title}》第${h.chunk.page}页：${h.chunk.text}`).join("\n\n");
+}
+function parseCited(text) {
+  const out = []; let last = 0;
+  const re = /(\[\d{1,2}\])/g; let m;
+  const pushText = (t) => { if (t.trim()) out.push({ t: "text", v: t.trim() }); };
+  while ((m = re.exec(text)) !== null) {
+    pushText(text.slice(last, m.index));
+    const n = parseInt(m[1].slice(1, -1), 10) - 1;
+    if (AI_LAST_HITS[n]) out.push({ t: "cite", v: n });
+    last = m.index + m[1].length;
+  }
+  pushText(text.slice(last));
+  return out;
+}
+let AI_LAST_HITS = [];
+function renderAIDrops(container, parts, hits) {
+  const wrap = document.createElement("div"); wrap.className = "snip";
+  parts.forEach(p => {
+    if (p.t === "text") { wrap.appendChild(document.createTextNode(p.v)); }
+    else { const h = hits[p.v]; const s = document.createElement("span"); s.className = "cite"; s.textContent = `[${p.v + 1}] ${h.doc.title} · P${h.chunk.page}`; wrap.appendChild(s); }
+    wrap.appendChild(document.createTextNode(" "));
+  });
+  container.appendChild(wrap);
+}
+async function aiAnswer(q, hits, qTokens) {
+  const box = $("#qaResult");
+  const card = document.createElement("div"); card.className = "card";
+  card.innerHTML = `<h2>AI 回答 <span class="badge">${esc(AI.model)}</span></h2><div class="snip" id="aiAnsBox">正在生成…</div>`;
+  box.prepend(card);
+  try {
+    const sys = "你是个人文献知识库的研究助手。仅依据提供的资料片段回答问题；回答使用中文；在引用资料处标注其编号（如 [1]）；资料不足以回答时明确说明；不要编造资料外的内容。";
+    const text = await dsChat([{ role: "system", content: sys }, { role: "user", content: `问题：${q}\n\n资料片段：\n${buildCtx(hits)}` }], 1100);
+    AI_LAST_HITS = hits;
+    const ansBox = card.querySelector("#aiAnsBox"); ansBox.innerHTML = "";
+    renderAIDrops(ansBox, parseCited(text), hits);
+  } catch (e) {
+    const ansBox = card.querySelector("#aiAnsBox");
+    ansBox.textContent = `AI 回答失败（${e.message}），以下为离线检索结果：`;
+  }
+}
+async function aiSummarize(docId, boxEl) {
+  const d = DOC_INDEX.find(x => x.id === docId);
+  const full = d.chunks.map(c => c.text).join("\n").slice(0, 6000);
+  try {
+    const sys = "你是文献阅读助手。请用中文把材料概括为一篇结构化摘要，依次包含：研究背景（1-2句）、方法（1-2句）、主要发现（2-3句）、结论与意义（1-2句）。只依据材料本身，不添加材料外内容。";
+    const text = await dsChat([{ role: "system", content: sys }, { role: "user", content: full }], 1100);
+    boxEl.innerHTML = "";
+    boxEl.appendChild(document.createTextNode(text));
+  } catch (e) {
+    const fallback = summarize(docId, 4);
+    boxEl.textContent = `AI 摘要失败（${e.message}），以下为离线抽取式摘要：\n` + (fallback ? fallback.join("") : "（文本过短）");
+  }
+}
+async function aiSlidePoints(s, hitsForSection, slideTopic) {
+  const ctx = hitsForSection.map((h, i) => `[${i + 1}] ${h.chunk.text}`).join("\n");
+  const sys = "你是学术 PPT 撰稿人。把资料片段改写为适合放进幻灯片的中文要点。只输出 JSON 数组，每个元素是字符串，3 到 4 条，每条不超过 40 字；关键表述保留原意，不添加资料外内容。";
+  try {
+    const text = await dsChat([{ role: "system", content: sys }, { role: "user", content: `小节主题：${slideTopic}\n\n资料片段：\n${ctx}` }], 600);
+    const m = text.match(/\[[\s\S]*\]/);
+    const arr = m ? JSON.parse(m[0]) : null;
+    if (Array.isArray(arr) && arr.length) return arr.map(x => String(x));
+  } catch (e) { /* fallback below */ }
+  return null;
 }
 </script>
 </body>
