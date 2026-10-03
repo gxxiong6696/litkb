@@ -139,6 +139,30 @@
     </div>
   </section>
 
+  <section class="view" id="view-search">
+    <div class="card">
+      <h2>学术检索与下载</h2>
+      <div class="row">
+        <select id="srcType" style="flex:0 0 118px">
+          <option value="crossref">Crossref 期刊</option>
+          <option value="openalex">OpenAlex 期刊</option>
+          <option value="arxiv">arXiv 预印本</option>
+        </select>
+        <select id="sScope" style="flex:0 0 100px">
+          <option value="keyword">按关键词</option>
+          <option value="author">按作者</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="sInput" placeholder="输入关键词或作者名">
+        <button class="btn sm" id="sBtn" style="flex:0 0 auto">检索</button>
+      </div>
+      <p class="muted" style="margin-top:8px">检索公开学术库（Crossref / OpenAlex / arXiv，无需账号）。下载入库把标题、作者、年份、主题与摘要存入本机知识库，参与检索、问答与报告；需要全文 PDF 时建议用科研助手订阅。专利检索继续走订阅链路。</p>
+    </div>
+    <div class="prog" id="sProg" style="display:none;margin:0 0 10px"><i></i></div>
+    <div id="sResults"></div>
+  </section>
+
   <!-- ═══════════ 问答 ═══════════ -->
   <section class="view" id="view-qa">
     <div class="card">
@@ -267,6 +291,7 @@
 
 <nav>
   <button class="on" data-v="view-lib"><svg viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M14 3v5h5"/></svg>文献库</button>
+  <button data-v="view-search"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="7"/><path d="M21 21l-4.3-4.3M10 7v6M7 10h6"/></svg>检索下载</button>
   <button data-v="view-qa"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>问答</button>
   <button data-v="view-report"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10h8M8 14h5"/></svg>报告</button>
   <button data-v="view-set"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>设置</button>
@@ -281,7 +306,7 @@
 "use strict";
 /* ═══════════ 基础 ═══════════ */
 const $ = (s) => document.querySelector(s);
-const APP_VERSION = "1.4.0", VERSION_CODE = 14;
+const APP_VERSION = "1.5.0", VERSION_CODE = 15;
 const CHUNK_SIZE = 320, CHUNK_OVERLAP = 60, MAX_CHUNKS_PER_DOC = 400;
 let DOC_INDEX = [];      // {id,title,src,pages,importedAt,chunks:[{text,page,tf:Map,len}],abstract}
 let SEARCH_TERMS = null; // Map term -> df
@@ -856,6 +881,111 @@ $("#btnSum").addEventListener("click", () => {
     $("#dvSum").textContent = sents ? sents.join("") : "（本文过短，无需摘要）";
   }, 60);
 });
+
+/* ═══════════ 学术检索与下载（Crossref / OpenAlex / arXiv） ═══════════ */
+async function searchCrossref(query, isAuthor, rows) {
+  const param = isAuthor ? "query.author=" + encodeURIComponent(query) : "query=" + encodeURIComponent(query);
+  const url = "https://api.crossref.org/works?" + param + "&rows=" + rows + "&select=title,author,DOI,abstract,issued,container-title";
+  const r = await fetch(url, { headers: { "User-Agent": "litkb-app/1.5 (mailto:litkb@local)" } });
+  if (!r.ok) throw new Error("Crossref HTTP " + r.status);
+  const j = await r.json();
+  return (j.message.items || []).map(it => ({
+    title: (it.title && it.title[0]) || "Untitled",
+    authors: (it.author || []).map(a => [a.given, a.family].filter(Boolean).join(" ")).filter(Boolean),
+    year: it.issued && it.issued["date-parts"] && it.issued["date-parts"][0] && it.issued["date-parts"][0][0] || null,
+    abstract: (it.abstract || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
+    doi: it.DOI || "", venue: (it["container-title"] && it["container-title"][0]) || ""
+  }));
+}
+async function searchOpenAlex(query, isAuthor, rows) {
+  const param = isAuthor ? "filter=raw_author_name.search:" + encodeURIComponent(query) : "search=" + encodeURIComponent(query);
+  const url = "https://api.openalex.org/works?" + param + "&per-page=" + rows + "&select=title,authorships,publication_year,doi,abstract_inverted_index";
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("OpenAlex HTTP " + r.status);
+  const j = await r.json();
+  return (j.results || []).map(it => {
+    let abstract = "";
+    if (it.abstract_inverted_index) {
+      const pos = [];
+      for (const [word, idxs] of Object.entries(it.abstract_inverted_index)) idxs.forEach(ix => pos[ix] = word);
+      abstract = pos.filter(Boolean).join(" ");
+    }
+    return {
+      title: it.title || "Untitled",
+      authors: (it.authorships || []).map(a => a.author && a.author.display_name).filter(Boolean),
+      year: it.publication_year || null,
+      abstract: abstract.trim(),
+      doi: (it.doi || "").replace("https://doi.org/", ""), venue: ""
+    };
+  });
+}
+async function searchArxiv(query, isAuthor, rows) {
+  const field = isAuthor ? "au" : "all";
+  const url = "https://export.arxiv.org/api/query?search_query=" + field + ":" + encodeURIComponent('"' + query + '"') + "&start=0&max_results=" + rows;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("arXiv HTTP " + r.status);
+  const xml = await r.text();
+  const doc = new DOMParser().parseFromString(xml, "text/xml");
+  return [...doc.querySelectorAll("entry")].map(en => {
+    const g = (tag) => { const el = en.querySelector(tag); return el ? el.textContent.trim() : ""; };
+    return {
+      title: g("title").replace(/\s+/g, " "),
+      authors: [...en.querySelectorAll("author > name")].map(n => n.textContent),
+      year: (g("published").match(/^(\d{4})/) || [null, null])[1] ? parseInt(g("published").match(/^(\d{4})/)[1], 10) : null,
+      abstract: g("summary").replace(/\s+/g, " "),
+      doi: g("arxiv:doi") || "", venue: "arXiv"
+    };
+  });
+}
+async function doSearch() {
+  const q = $("#sInput").value.trim();
+  if (!q) return toast("先输入检索词");
+  const src = $("#srcType").value, isAuthor = $("#sScope").value === "author";
+  const box = $("#sResults"), prog = $("#sProg");
+  btnDisable(true); box.innerHTML = '<div class="empty">正在检索 ' + esc(src) + ' …</div>'; prog.style.display = "block"; prog.firstElementChild.style.width = "30%";
+  try {
+    const fn = src === "crossref" ? searchCrossref : src === "openalex" ? searchOpenAlex : searchArxiv;
+    const list = (await fn(q, isAuthor, 10)).filter(it => it.title && it.title !== "Untitled");
+    prog.firstElementChild.style.width = "100%";
+    if (!list.length) { box.innerHTML = '<div class="empty">没有检索到结果，换个词试试。</div>'; return; }
+    window.__searchResults = list;
+    box.innerHTML = "";
+    list.forEach((it, idx) => {
+      const div = document.createElement("div"); div.className = "card"; div.style.marginBottom = "10px";
+      div.innerHTML = '<div style="font-weight:600;font-size:14px"></div>' +
+        '<div class="muted" style="margin:4px 0"></div>' +
+        '<div class="snip"></div>' +
+        '<div class="row" style="margin-top:8px"><button class="btn ghost sm dl" style="flex:1">下载入库</button></div>';
+      div.querySelector("div").textContent = it.title;
+      div.querySelector(".muted").textContent = [it.authors.slice(0, 3).join("、") || "佚名", it.year, it.venue || (it.doi ? "DOI: " + it.doi : "")].filter(Boolean).join(" · ");
+      div.querySelector(".snip").textContent = it.abstract ? (it.abstract.slice(0, 140) + (it.abstract.length > 140 ? "…" : "")) : "（无摘要，入库后将只有标题行信息）";
+      div.querySelector(".dl").addEventListener("click", () => importSearchItem(idx, div.querySelector(".dl")));
+      box.appendChild(div);
+    });
+  } catch (e) {
+    box.innerHTML = '<div class="empty">检索失败：' + esc(e.message) + '</div>';
+  } finally { btnDisable(false); prog.style.display = "none"; }
+  function btnDisable(dis) { $("#sBtn").disabled = dis; $("#sBtn").textContent = dis ? "检索中…" : "检索"; }
+}
+async function importSearchItem(idx, btn) {
+  const it = (window.__searchResults || [])[idx];
+  if (!it) return;
+  const text = ((it.abstract || "") + "\n\n来源：" + it.title + (it.authors.length ? "（" + it.authors.join(", ") + "）" : "") + (it.year ? " · " + it.year : "") + (it.doi ? " · DOI: " + it.doi : "")).trim();
+  if (text.length < 50) return toast("该条目信息过少（无摘要），暂不入库");
+  const fp = contentFingerprint(it.title, text);
+  if (hasFingerprint(fp)) { btn.textContent = "已在库中 ✓"; btn.disabled = true; return toast("该文献已在库内，无需重复下载"); }
+  const chunks = chunkText(text);
+  DOC_INDEX.push({
+    id: "d" + Date.now() + Math.random().toString(36).slice(2, 6),
+    title: it.title, src: it.doi ? ("https://doi.org/" + it.doi) : ("学术检索·" + it.venue || "学术检索"),
+    pages: Math.max(1, Math.ceil(text.length / 1800)), importedAt: Date.now(), chunks, abstract: null,
+    topics: ["学术检索"], authors: it.authors.slice(0, 8),
+    kind: "paper", year: it.year, origin: "search", fp
+  });
+  if (saveLib()) { renderLib(); refreshScopeSel(); btn.textContent = "已入库 ✓"; btn.disabled = true; toast("已下载入库：" + it.title.slice(0, 24)); }
+}
+$("#sBtn").addEventListener("click", doSearch);
+$("#sInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
 
 /* ═══════════ 问答 ═══════════ */
 $("#btnAsk").addEventListener("click", ask);
