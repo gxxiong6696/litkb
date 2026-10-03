@@ -1032,14 +1032,26 @@ async function doSearch() {
     window.__searchAbstractCount = withAbstract;
     prog.firstElementChild.style.width = "100%";
     if (!list.length) { box.innerHTML = '<div class="empty">没有检索到结果；可放宽年份区间或更换检索词。</div>'; $("#sToolbar").style.display = "none"; return; }
-    // 作者名标注：中文人名检索时，区分「张跃是作者」还是「文中仅提及张跃」
+    // 作者名标注：中文人名检索时，区分「张跃是作者」还是「文中仅提及张跃」；并将“作为作者”的结果合并到最前
     window.__lastQuery = q;
     if (isCJKName(q)) {
       list.forEach(it => {
         const isAuthor = (it.authors || []).some(a => normCjkName(a) === normCjkName(q));
         it.authorRole = isAuthor ? "author" : "mention";
       });
-      // 作者身份优先排序
+      // 并行发一次作者模式检索（限定同数据源），把“该人作为作者”的论文合到最前
+      try {
+        const fn2 = src === "crossref" ? searchCrossref : src === "openalex" ? searchOpenAlex : searchArxiv;
+        const asAuthor = (await fn2(q, true, 10, null, null, null)).filter(it => it.title && it.title !== "Untitled");
+        asAuthor.forEach(it => {
+          const fp = contentFingerprint(it.title, (it.abstract || "") + it.title);
+          if (list.some(x => contentFingerprint(x.title, (x.abstract || "") + x.title) === fp)) return;
+          it.authorRole = "author";
+          list.unshift(it);
+        });
+      } catch (e) { /* 合并失败不影响原结果 */ }
+      // 再次标注（合并的新条目也标 author）+ 稳定排序：author 在前
+      list.forEach(it => { if (!it.authorRole) it.authorRole = "mention"; });
       list.sort((a, b) => (b.authorRole === "author") - (a.authorRole === "author"));
     }
     window.__searchResults = list;
