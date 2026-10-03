@@ -994,22 +994,33 @@ async function doSearch() {
       div.innerHTML = '<div style="font-weight:600;font-size:14px"></div>' +
         '<div class="muted" style="margin:4px 0"></div>' +
         '<div class="snip"></div>' +
-        '<div class="row" style="margin-top:8px"><button class="btn ghost sm dl" style="flex:1">下载入库</button><button class="btn ghost sm pdfDl" style="flex:1;display:none">下载原文 PDF</button><button class="btn ghost sm pdfOpen" style="flex:1;display:none">打开原文页</button></div>';
+        '<div class="row" style="margin-top:8px"><button class="btn ghost sm dl" style="flex:1">下载入库</button><button class="btn ghost sm pdfDl" style="flex:1;display:none">下载原文 PDF</button><button class="btn ghost sm pdfOpen" style="flex:1;display:none">原文页</button><button class="btn ghost sm pdfGs" style="flex:1;display:none">学术版</button><button class="btn ghost sm cpLink" style="flex:1;display:none">复制链接</button></div>';
       div.querySelector("div").textContent = (idx + 1) + ". " + it.title;
       div.querySelector(".muted").textContent = [it.authors.slice(0, 3).join("、") || "佚名", it.year, it.venue || (it.doi ? "DOI: " + it.doi : "")].filter(Boolean).join(" · ");
       div.querySelector(".snip").textContent = it.abstract ? (it.abstract.slice(0, 140) + (it.abstract.length > 140 ? "…" : "")) : "（该条无摘要；下载仅存标题与作者信息，建议换有摘要的条目或用全文 PDF 补充）";
       div.querySelector(".dl").addEventListener("click", () => importSearchItem(idx, div.querySelector(".dl")));
       const isArxiv = /arxiv/i.test(it.venue || "") || (it.doi || "").toLowerCase().includes("arxiv") || (it.doi || "").startsWith("10.48550/");
       const hasDoi = !!(it.doi || "").trim();
+      const titleForGs = encodeURIComponent(it.title || "");
       if (isArxiv) {
         const pdfBtn = div.querySelector(".pdfDl"); pdfBtn.style.display = "block";
         pdfBtn.addEventListener("click", () => downloadSearchPdf(idx, pdfBtn));
-      } else if (hasDoi) {
-        const pdfBtn = div.querySelector(".pdfDl"), openBtn = div.querySelector(".pdfOpen");
-        pdfBtn.style.display = "block"; openBtn.style.display = "block";
-        pdfBtn.textContent = "下载原文（OA）";
-        pdfBtn.addEventListener("click", () => downloadSearchPdf(idx, pdfBtn));
-        openBtn.addEventListener("click", () => { window.open("https://doi.org/" + it.doi.trim(), "_blank"); });
+      } else {
+        const pdfBtn = div.querySelector(".pdfDl"), openBtn = div.querySelector(".pdfOpen"), gsBtn = div.querySelector(".pdfGs");
+        if (hasDoi) {
+          pdfBtn.style.display = "block"; pdfBtn.textContent = "下载原文（OA）";
+          pdfBtn.addEventListener("click", () => downloadSearchPdf(idx, pdfBtn));
+          openBtn.style.display = "block";
+          openBtn.addEventListener("click", () => { window.open("https://doi.org/" + it.doi.trim(), "_blank"); });
+        }
+        gsBtn.style.display = "block";
+        gsBtn.addEventListener("click", () => { window.open("https://scholar.google.com/scholar?q=" + titleForGs, "_blank"); });
+        const cpBtn = div.querySelector(".cpLink"); cpBtn.style.display = "block";
+        cpBtn.addEventListener("click", () => {
+          const link = hasDoi ? ("https://doi.org/" + it.doi.trim()) : ("https://scholar.google.com/scholar?q=" + titleForGs);
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => toast("链接已复制：" + link.slice(0, 40) + "…"), () => toast(link));
+          else toast(link, 5000);
+        });
       }
       box.appendChild(div);
     });
