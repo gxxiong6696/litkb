@@ -152,6 +152,7 @@
           <option value="keyword">按关键词</option>
           <option value="author">按作者</option>
         </select>
+        <label style="flex:1;display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink2)"><input type="checkbox" id="sExact" checked style="width:16px;height:16px">严格匹配姓名</label>
       </div>
       <div class="row" style="margin-top:8px">
         <input type="text" id="sInput" placeholder="关键词（可与作者同时填）">
@@ -981,6 +982,23 @@ async function doSearch() {
   try {
     const fn = src === "crossref" ? searchCrossref : src === "openalex" ? searchOpenAlex : searchArxiv;
     let list = (await fn(q, isAuthor, rows, authorExtra, yFrom, yTo)).filter(it => it.title && it.title !== "Untitled");
+    // 严格匹配姓名（默认开）：中文名去空格后全名相等；拉丁名分词顺序无关+连写兼容
+    if (isAuthor && $("#sExact").checked) {
+      const target = q.replace(/\s+/g, "").toLowerCase();
+      const isCJK = /[\u4e00-\u9fff]/.test(target);
+      const targetTokens = target.split(/\s+/).filter(Boolean);
+      list = list.filter(it => {
+        return (it.authors || []).some(a => {
+          const norm = String(a || "").replace(/[\s,]+/g, " ").trim().toLowerCase();
+          if (norm.replace(/\s+/g, "") === target) return true; // 连写全等（zhangyue / 张跃）
+          if (isCJK) return false; // 中文名：只认去空格全等（张跃≠张灵跃）
+          // 拉丁名：token 序列比较（顺序无关）
+          const nameTokens = norm.split(/[^a-z]+/).filter(Boolean);
+          if (!targetTokens.length || !nameTokens.length || nameTokens.length !== targetTokens.length) return false;
+          return targetTokens.every(t => nameTokens.includes(t));
+        });
+      });
+    }
     if (yFrom) list = list.filter(it => !it.year || it.year >= parseInt(yFrom, 10));
     if (yTo) list = list.filter(it => !it.year || it.year <= parseInt(yTo, 10));
     const withAbstract = list.filter(it => (it.abstract || "").length >= 50).length;
