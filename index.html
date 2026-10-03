@@ -910,13 +910,40 @@ async function searchCrossref(query, isAuthor, rows, authorExtra, yFrom, yTo) {
   const r = await fetch(url, { headers: { "User-Agent": "litkb-app/1.5 (mailto:litkb@local)" } });
   if (!r.ok) throw new Error("Crossref HTTP " + r.status);
   const j = await r.json();
-  return (j.message.items || []).map(it => ({
+  const out = (j.message.items || []).map(it => ({
     title: (it.title && it.title[0]) || "Untitled",
     authors: (it.author || []).map(a => [a.given, a.family].filter(Boolean).join(" ")).filter(Boolean),
     year: it.issued && it.issued["date-parts"] && it.issued["date-parts"][0] && it.issued["date-parts"][0][0] || null,
     abstract: (it.abstract || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
     doi: it.DOI || "", venue: (it["container-title"] && it["container-title"][0]) || ""
   }));
+  return await fillAbstractsFromOpenAlex(out);
+}
+/* Crossref 缺摘要时，按 DOI 批量去 OpenAlex 反查（倒排索引还原摘要） */
+async function fillAbstractsFromOpenAlex(items) {
+  const missing = items.filter(it => (!it.abstract || it.abstract.length < 50) && it.doi);
+  if (!missing.length) return items;
+  for (let i = 0; i < missing.length; i += 25) {
+    const batch = missing.slice(i, i + 25).map(it => "https://doi.org/" + it.doi);
+    try {
+      const r = await fetch("https://api.openalex.org/works?filter=doi:" + batch.map(encodeURIComponent).join("|") + "&per-page=50&select=doi,abstract_inverted_index");
+      if (!r.ok) break;
+      const j = await r.json();
+      const byDoi = new Map();
+      for (const w of (j.results || [])) {
+        if (!w.abstract_inverted_index) continue;
+        const pos = [];
+        for (const [word, idxs] of Object.entries(w.abstract_inverted_index)) idxs.forEach(ix => pos[ix] = word);
+        const abs = pos.filter(Boolean).join(" ").trim();
+        if (abs) byDoi.set((w.doi || "").replace("https://doi.org/", "").toLowerCase(), abs);
+      }
+      for (const it of missing.slice(i, i + 25)) {
+        const abs = byDoi.get(it.doi.toLowerCase());
+        if (abs && abs.length > (it.abstract || "").length) it.abstract = abs;
+      }
+    } catch (e) { break; }
+  }
+  return items;
 }
 async function searchOpenAlex(query, isAuthor, rows, authorExtra, yFrom, yTo) {
   const filters = [];
