@@ -101,11 +101,21 @@
   <section class="view on" id="view-lib">
     <div class="card">
       <div class="row">
-        <button class="btn" id="btnImport">导入文献（TXT / PDF）</button>
+        <button class="btn" id="btnImport" style="flex:1">导入文献</button>
+        <button class="btn ghost" id="btnSubImport" style="flex:1">导入订阅（科研助手）</button>
       </div>
       <input type="file" id="fileInput" multiple accept=".txt,.md,.pdf" style="display:none">
+      <input type="file" id="subInput" multiple accept=".zip" style="display:none">
       <div class="prog" id="prog"><i></i></div>
-      <p class="muted" style="margin-top:8px">TXT / Markdown 直接解析；PDF 提取文本层（扫描件暂不支持 OCR）。全部数据仅保存在手机本机。</p>
+      <p class="muted" style="margin-top:8px">TXT / Markdown 直接解析；PDF 提取文本层（扫描件暂不支持 OCR）。订阅包为科研助手智能体导出的 zip（内含 litkb-manifest.json 与文献文件），导入后自动按主题与作者分组。全部数据仅保存在手机本机。</p>
+    </div>
+    <div class="card" id="grpCard" style="display:none">
+      <h2>分组浏览 <span class="badge" id="grpCount">0</span></h2>
+      <div class="row" style="margin-bottom:8px">
+        <select id="grpType" style="flex:0 0 110px"><option value="topic">按主题</option><option value="author">按作者</option></select>
+        <select id="grpName" style="flex:1"></select>
+      </div>
+      <div id="grpDocs"></div>
     </div>
     <div class="card">
       <h2>我的文献 <span class="badge" id="libCount">0</span></h2>
@@ -131,6 +141,9 @@
       <div class="row">
         <input type="text" id="qInput" placeholder="例如： Transformer 注意力机制说了什么">
         <button class="btn sm" id="btnAsk" style="flex:0 0 auto">提问</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <select id="scopeSel" style="flex:1"><option value="all">全部文献</option></select>
       </div>
       <div class="chiprow" style="margin-top:8px">
         <span class="chip" data-q="本文库的核心主题是什么">核心主题</span>
@@ -167,6 +180,8 @@
         <option value="imrad">学术 IMRAD（背景→方法→证据→讨论→结论）</option>
         <option value="topic">主题分段（主题→要点→小结）</option>
       </select>
+      <label class="muted">检索范围</label>
+      <select id="scopeSel" style="margin:6px 0 10px"><option value="all">全部文献</option></select>
       <div class="row" style="margin:6px 0 12px">
         <button class="btn" id="btnReport" style="flex:1">导出 PPT</button>
         <button class="btn ghost" id="btnDocx" style="flex:1">导出 Word 调研报告</button>
@@ -261,7 +276,7 @@
 "use strict";
 /* ═══════════ 基础 ═══════════ */
 const $ = (s) => document.querySelector(s);
-const APP_VERSION = "1.2.0", VERSION_CODE = 12;
+const APP_VERSION = "1.3.0", VERSION_CODE = 13;
 const CHUNK_SIZE = 320, CHUNK_OVERLAP = 60, MAX_CHUNKS_PER_DOC = 400;
 let DOC_INDEX = [];      // {id,title,src,pages,importedAt,chunks:[{text,page,tf:Map,len}],abstract}
 let SEARCH_TERMS = null; // Map term -> df
@@ -357,6 +372,8 @@ function rebuildDf() {
 
 /* ═══════════ 检索（关键词 BM25 + 简式向量 重叠度） ═══════════ */
 function search(query, topK = 6) {
+  topK = typeof topK === "object" ? (topK.topK || 6) : topK;
+  const scope = (typeof topK === "object" && topK.scope) ? topK.scope : null;
   rebuildDf();
   const N = Math.max(1, DOC_INDEX.reduce((s, d) => s + d.chunks.length, 0));
   const qTokens = [...new Set(tokenize(query).filter(termFilter))];
@@ -364,6 +381,7 @@ function search(query, topK = 6) {
   const avgLen = 60;
   const results = [];
   for (const d of DOC_INDEX) {
+    if (scope && !inScope(d, scope)) continue;
     for (const c of d.chunks) {
       let bm = 0, overlap = 0;
       for (const t of qTokens) {
@@ -443,8 +461,152 @@ async function importFile(f) {
   if (text.length < 50) throw new Error("too short");
   const chunks = chunkText(text);
   if (!chunks.length) throw new Error("no content");
-  DOC_INDEX.push({ id: "d" + Date.now() + Math.random().toString(36).slice(2, 6), title: f.name.replace(/\.[^.]+$/, ""), src: f.name, pages, importedAt: Date.now(), chunks, abstract: null });
+  DOC_INDEX.push({ id: "d" + Date.now() + Math.random().toString(36).slice(2, 6), title: f.name.replace(/\.[^.]+$/, ""), src: f.name, pages, importedAt: Date.now(), chunks, abstract: null, topics: [], authors: [] });
 }
+
+function inScope(d, scope) {
+  if (!scope || scope.all) return true;
+  if (scope.type === "topic") return (d.topics || []).includes(scope.name);
+  if (scope.type === "author") return (d.authors || []).includes(scope.name);
+  return true;
+}
+function currentScope() {
+  const sel = document.querySelector("#scopeSel");
+  if (!sel || !sel.value || sel.value === "all") return null;
+  const m = sel.value.match(/^(topic|author):(.+)$/);
+  return m ? { type: m[1], name: m[2] } : null;
+}
+function refreshScopeSel() {
+  document.querySelectorAll("#scopeSel").forEach(sel => {
+    const cur = sel.value;
+    const sc = collectScopes();
+    const opts = ['<option value="all">全部文献</option>'];
+    if (sc.topics.length) {
+      opts.push('<optgroup label="按主题">');
+      sc.topics.forEach(t => opts.push(`<option value="topic:${esc(t)}">主题：${esc(t)}</option>`));
+      opts.push('</optgroup>');
+    }
+    if (sc.authors.length) {
+      opts.push('<optgroup label="按作者">');
+      sc.authors.forEach(a => opts.push(`<option value="author:${esc(a)}">作者：${esc(a)}</option>`));
+      opts.push('</optgroup>');
+    }
+    sel.innerHTML = opts.join("");
+    if (cur) sel.value = cur;
+  });
+}
+document.addEventListener("change", (e) => {
+  if (e.target && e.target.id === "scopeSel") {
+    const v = e.target.value;
+    document.querySelectorAll("#scopeSel").forEach(s => { s.value = v; });
+  }
+});
+
+/* ═══════════ 科研助手订阅导入（桥接协议 v1） ═══════════ */
+function parseManifest(jsonText) {
+  let m;
+  try { m = JSON.parse(jsonText); } catch (e) { throw new Error("litkb-manifest.json 不是合法 JSON"); }
+  if (!m || m.protocol !== "litkb-bridge" || !Array.isArray(m.items)) throw new Error("不是有效的 litkb-manifest（缺 protocol=litkb-bridge 或 items 数组）");
+  return m;
+}
+function collectScopes() {
+  const tp = new Set(), au = new Set();
+  for (const d of DOC_INDEX) { (d.topics || []).forEach(t => tp.add(t)); (d.authors || []).forEach(a => au.add(a)); }
+  return { topics: [...tp].sort(), authors: [...au].sort() };
+}
+function renderGroupCard() {
+  const sc = collectScopes();
+  const card = $("#grpCard");
+  const has = sc.topics.length || sc.authors.length;
+  card.style.display = has ? "block" : "none";
+  if (!has) return;
+  const type = $("#grpType").value;
+  const list = type === "topic" ? sc.topics : sc.authors;
+  const sel = $("#grpName");
+  const cur = sel.value;
+  sel.innerHTML = list.map(x => `<option>${esc(x)}</option>`).join("") || "<option>（无）</option>";
+  if (cur && list.includes(cur)) sel.value = cur;
+  $("#grpCount").textContent = list.length;
+  const chosen = sel.value;
+  const docs = DOC_INDEX.filter(d => (type === "topic" ? (d.topics || []) : (d.authors || [])).includes(chosen));
+  const box = $("#grpDocs"); box.innerHTML = "";
+  if (!docs.length) { box.innerHTML = '<div class="empty">该分组暂无文献</div>'; return; }
+  docs.forEach(d => {
+    const div = document.createElement("div"); div.className = "item";
+    const tags = (d.topics || []).map(t => `<span class="chip" style="margin:0 4px 0 0">${esc(t)}</span>`).join("");
+    div.innerHTML = `<div class="info"><div class="t"></div><div class="m">${type === "topic" ? esc((d.authors || []).join("、")) || "—" : tags || "—"} · ${d.chunks.length} 块</div></div>`;
+    div.querySelector(".t").textContent = d.title;
+    div.querySelector(".info").addEventListener("click", () => openDoc(d.id));
+    box.appendChild(div);
+  });
+}
+$("#grpType").addEventListener("change", renderGroupCard);
+$("#grpName").addEventListener("change", renderGroupCard);
+$("#btnSubImport").addEventListener("click", () => $("#subInput").click());
+$("#subInput").addEventListener("change", async (e) => {
+  const files = [...e.target.files]; e.target.value = "";
+  if (!files.length) return;
+  const prog = $("#prog"); prog.classList.add("on");
+  let total = 0, skipped = [];
+  for (let i = 0; i < files.length; i++) {
+    prog.firstElementChild.style.width = Math.round(i / files.length * 100) + "%";
+    const f = files[i];
+    try {
+      if (!/\.zip$/i.test(f.name)) { skipped.push(f.name + "（非 zip）"); continue; }
+      const buf = await f.arrayBuffer();
+      const zip = await JSZip.loadAsync(buf);
+      const mfFile = zip.file("litkb-manifest.json") || zip.file(/litkb-manifest\.json$/)[0];
+      if (!mfFile) throw new Error("包内无 litkb-manifest.json");
+      const manifest = parseManifest(await mfFile.async("string"));
+      // 按 manifest 逐条导入（有文件用文件，无文件用 manifest 内联 text）
+      const items = manifest.items;
+      for (let k = 0; k < items.length; k++) {
+        prog.firstElementChild.style.width = Math.round((i + (k + 1) / items.length) / files.length * 100) + "%";
+        const it = items[k];
+        let text = "", pages = 1;
+        const rel = it.file ? (zip.file(it.file) || zip.file(new RegExp(it.file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$"))[0]) : null;
+        if (rel) {
+          const ab = await rel.async("arraybuffer");
+          if (/\.pdf$/i.test(it.file || "")) {
+            const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
+            pages = pdf.numPages;
+            const parts = [];
+            for (let p = 1; p <= Math.min(pdf.numPages, 120); p++) {
+              const page = await pdf.getPage(p);
+              const tc = await page.getTextContent();
+              parts.push(tc.items.map(x => x.str).join(" "));
+            }
+            text = parts.join("\n\n");
+          } else {
+            text = new TextDecoder("utf-8").decode(ab);
+          }
+        } else if (it.text) {
+          text = String(it.text);
+        } else { skipped.push((it.title || "?") + "（无文件且无正文）"); continue; }
+        text = text.replace(/\r/g, "").replace(/[ \t]+/g, " ").trim();
+        if (text.length < 50) { skipped.push((it.title || it.file || "?") + "（文本过短）"); continue; }
+        const chunks = chunkText(text);
+        if (!chunks.length) { skipped.push((it.title || "?") + "（无有效分块）"); continue; }
+        DOC_INDEX.push({
+          id: "d" + Date.now() + Math.random().toString(36).slice(2, 6),
+          title: it.title || (it.file || "untitled").replace(/\.[^.]+$/, ""),
+          src: it.file || (manifest.name || "subscription") + ".zip",
+          pages, importedAt: Date.now(), chunks, abstract: null,
+          topics: Array.isArray(it.topics) ? it.topics : [],
+          authors: Array.isArray(it.authors) ? it.authors : [],
+          kind: it.type === "patent" ? "patent" : "paper",
+          year: it.year || null,
+          origin: "subscription"
+        });
+        total++;
+      }
+    } catch (err) { skipped.push(f.name + "：" + err.message); }
+  }
+  prog.firstElementChild.style.width = "100%";
+  setTimeout(() => prog.classList.remove("on"), 600);
+  if (saveLib()) { renderLib(); renderGroupCard(); showView("view-lib"); }
+  toast(`订阅导入完成：新入库 ${total} 篇${skipped.length ? `；跳过 ${skipped.length} 项` : ""}`, 3200);
+});
 
 /* ═══════════ 库视图 ═══════════ */
 function renderLib() {
@@ -469,6 +631,7 @@ function renderLib() {
   $("#stDocs").textContent = DOC_INDEX.length;
   $("#stChunks").textContent = totalChunks;
   rebuildDf(); $("#stTerms").textContent = SEARCH_TERMS ? SEARCH_TERMS.size : 0;
+  renderGroupCard();
   let bytes = 0; try { bytes = (localStorage.getItem(STORE_KEY) || "").length * 2; } catch (e) {}
   $("#stSize").textContent = bytes > 1048576 ? (bytes / 1048576).toFixed(1) + " MB" : Math.round(bytes / 1024) + " KB";
 }
@@ -609,7 +772,7 @@ function ask() {
   const box = $("#qaResult");
   if (!q) return toast("先输入问题");
   if (!DOC_INDEX.length) { box.innerHTML = '<div class="card empty">库还是空的，先去「文献库」导入。</div>'; return; }
-  const hits = search(q, 6);
+  const hits = search(q, { topK: 6, scope: currentScope() });
   if (!hits.length) { box.innerHTML = '<div class="card empty">库里没有找到相关内容，换个问法试试。</div>'; return; }
   const qTokens = [...new Set(tokenize(q).filter(termFilter))];
   box.innerHTML = `<div class="card"><h2>依据库内原文（按相关度排序）</h2>${
@@ -635,7 +798,7 @@ function handleReport(fmtArg) {
 
   setTimeout(async () => {
     try {
-      const hits = search(topic, Math.max(12, pages * 3));
+      const hits = search(topic, { topK: Math.max(12, pages * 3), scope: currentScope() });
       if (!hits.length) throw new Error("库中未找到与主题相关的内容");
       prog.firstElementChild.style.width = "30%";
       const outline = buildOutline(topic, audience, pages, tpl, hits);
