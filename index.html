@@ -994,11 +994,23 @@ async function doSearch() {
       div.innerHTML = '<div style="font-weight:600;font-size:14px"></div>' +
         '<div class="muted" style="margin:4px 0"></div>' +
         '<div class="snip"></div>' +
-        '<div class="row" style="margin-top:8px"><button class="btn ghost sm dl" style="flex:1">下载入库</button></div>';
+        '<div class="row" style="margin-top:8px"><button class="btn ghost sm dl" style="flex:1">下载入库</button><button class="btn ghost sm pdfDl" style="flex:1;display:none">下载原文 PDF</button><button class="btn ghost sm pdfOpen" style="flex:1;display:none">打开原文页</button></div>';
       div.querySelector("div").textContent = (idx + 1) + ". " + it.title;
       div.querySelector(".muted").textContent = [it.authors.slice(0, 3).join("、") || "佚名", it.year, it.venue || (it.doi ? "DOI: " + it.doi : "")].filter(Boolean).join(" · ");
       div.querySelector(".snip").textContent = it.abstract ? (it.abstract.slice(0, 140) + (it.abstract.length > 140 ? "…" : "")) : "（该条无摘要；下载仅存标题与作者信息，建议换有摘要的条目或用全文 PDF 补充）";
       div.querySelector(".dl").addEventListener("click", () => importSearchItem(idx, div.querySelector(".dl")));
+      const isArxiv = /arxiv/i.test(it.venue || "") || (it.doi || "").toLowerCase().includes("arxiv") || (it.doi || "").startsWith("10.48550/");
+      const hasDoi = !!(it.doi || "").trim();
+      if (isArxiv) {
+        const pdfBtn = div.querySelector(".pdfDl"); pdfBtn.style.display = "block";
+        pdfBtn.addEventListener("click", () => downloadSearchPdf(idx, pdfBtn));
+      } else if (hasDoi) {
+        const pdfBtn = div.querySelector(".pdfDl"), openBtn = div.querySelector(".pdfOpen");
+        pdfBtn.style.display = "block"; openBtn.style.display = "block";
+        pdfBtn.textContent = "下载原文（OA）";
+        pdfBtn.addEventListener("click", () => downloadSearchPdf(idx, pdfBtn));
+        openBtn.addEventListener("click", () => { window.open("https://doi.org/" + it.doi.trim(), "_blank"); });
+      }
       box.appendChild(div);
     });
     $("#sToolbar").style.display = "block";
@@ -1060,6 +1072,94 @@ $("#sClearSel").addEventListener("click", () => {
 });
 $("#sBtn").addEventListener("click", doSearch);
 $("#sInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
+
+/* ═══════════ 原文 PDF 下载（OA 定位 → 全文入库） ═══════════ */
+function arxivIdFromItem(it) {
+  const doi = (it.doi || "").toLowerCase();
+  const m = doi.match(/10\.48550\/arxiv\.(.+)/);
+  if (m) return m[1];
+  return null;
+}
+async function locateOaPdf(it) {
+  const axId = arxivIdFromItem(it);
+  if (axId) return { url: "https://arxiv.org/pdf/" + axId, how: "arXiv" };
+  const doi = (it.doi || "").trim();
+  if (!doi) return null;
+  try {
+    const r = await fetch("https://api.unpaywall.org/v2/" + encodeURIComponent(doi) + "?email=litkb@local.app");
+    if (r.ok) {
+      const j = await r.json();
+      const loc = j.best_oa_location || {};
+      if (loc.url_for_pdf) return { url: loc.url_for_pdf, how: "Unpaywall" };
+      if (j.is_oa && loc.url_for_landing_page) return { url: loc.url_for_landing_page, how: "Unpaywall-landing" };
+    }
+  } catch (e) { /* 下一源 */ }
+  try {
+    const r = await fetch("https://api.openalex.org/works/doi:" + encodeURIComponent(doi) + "?select=best_oa_location,open_access");
+    if (r.ok) {
+      const j = await r.json();
+      const loc = j.best_oa_location || {};
+      if (loc.pdf_url) return { url: loc.pdf_url, how: "OpenAlex" };
+      if (j.open_access && j.open_access.is_oa && loc.landing_page_url) return { url: loc.landing_page_url, how: "OpenAlex-landing" };
+    }
+  } catch (e) { /* 放弃 */ }
+  return null;
+}
+async function downloadSearchPdf(idx, btn) {
+  const it = (window.__searchResults || [])[idx];
+  if (!it) return;
+  const oldLabel = btn.textContent;
+  btn.disabled = true; btn.textContent = "定位 OA…";
+  try {
+    const loc = await locateOaPdf(it);
+    if (!loc) { btn.textContent = "未找到 OA 原文"; toast("未找到开放获取的 PDF；可点「打开原文页」手动获取", 3600); setTimeout(() => { btn.textContent = oldLabel; btn.disabled = false; }, 2500); return; }
+    btn.textContent = "下载 PDF…（" + loc.how + "）";
+    if (!it._imported) { await importSearchItem(idx, btn); it._imported = true; }
+    const fp = contentFingerprint(it.title, ((it.abstract || "") + "\n\n来源：" + it.title + (it.authors.length ? "（" + it.authors.join(", ") + "）" : "") + (it.year ? " · " + it.year : "") + (it.doi ? " · DOI: " + it.doi : "")).trim());
+    const doc = DOC_INDEX.find(d => d.fp === fp);
+    if (!doc) { btn.textContent = "请先下载入库"; setTimeout(() => { btn.textContent = oldLabel; btn.disabled = false; }, 2000); return; }
+    let pdfBytes = null;
+    try {
+      const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 60000);
+      const r = await fetch(loc.url, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const buf = await r.arrayBuffer();
+      const u8 = new Uint8Array(buf);
+      if (!(u8[0] === 0x25 && u8[1] === 0x50)) throw new Error("响应不是 PDF");
+      pdfBytes = u8;
+    } catch (e) {
+      btn.textContent = "已在新页打开 PDF";
+      window.open(loc.url, "_blank");
+      toast("该 PDF 无法在网页内直接拉取，已在新页打开，保存后可用「导入文献」入库", 4200);
+      return;
+    }
+    btn.textContent = "提取全文…";
+    const pdf = await pdfjsLib.getDocument({ data: pdfBytes }).promise;
+    const parts = [];
+    for (let p = 1; p <= Math.min(pdf.numPages, 120); p++) {
+      const page = await pdf.getPage(p);
+      const tc = await page.getTextContent();
+      parts.push(tc.items.map(x => x.str).join(" "));
+    }
+    const fullText = parts.join("\n\n").replace(/\r/g, "").replace(/[ \t]+/g, " ").trim();
+    const oldLen = doc.chunks.reduce((s, c) => s + c.text.length, 0);
+    if (fullText.length > oldLen) {
+      doc.chunks = chunkText(fullText);
+      doc.pages = pdf.numPages;
+      doc.fullText = true;
+      saveLib(); renderLib(); refreshScopeSel(); renderGroupCard();
+      btn.textContent = "全文已入库 ✓";
+      toast("原文已下载并升级为全文（" + pdf.numPages + " 页，来源 " + loc.how + "）", 3600);
+    } else {
+      btn.textContent = "全文未优于现有入库";
+      toast("下载成功但提取文本未优于已入库摘要，保持原状");
+    }
+  } catch (e) {
+    btn.textContent = oldLabel; btn.disabled = false;
+    toast("原文下载失败：" + e.message, 3600);
+  }
+}
 
 /* ═══════════ 问答 ═══════════ */
 $("#btnAsk").addEventListener("click", ask);
