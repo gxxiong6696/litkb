@@ -154,10 +154,24 @@
         </select>
       </div>
       <div class="row" style="margin-top:8px">
-        <input type="text" id="sInput" placeholder="输入关键词或作者名">
-        <button class="btn sm" id="sBtn" style="flex:0 0 auto">检索</button>
+        <input type="text" id="sInput" placeholder="关键词（可与作者同时填）">
       </div>
-      <p class="muted" style="margin-top:8px">检索公开学术库（Crossref / OpenAlex / arXiv，无需账号）。下载入库把标题、作者、年份、主题与摘要存入本机知识库，参与检索、问答与报告；需要全文 PDF 时建议用科研助手订阅。专利检索继续走订阅链路。</p>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="sAuthor" placeholder="作者姓名（可留空）">
+        <input type="text" id="sYearFrom" placeholder="起始年 如2020" style="flex:0 0 110px" inputmode="numeric">
+        <input type="text" id="sYearTo" placeholder="截止年" style="flex:0 0 96px" inputmode="numeric">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn sm" id="sBtn" style="flex:1">检索</button>
+      </div>
+      <p class="muted" style="margin-top:8px">关键词与作者可同时填写（同时命中）；年份区间为可选过滤。下载入库把标题、作者、年份、DOI 与摘要存入本机知识库，参与检索、问答与报告。专利检索继续走订阅链路。</p>
+    </div>
+    <div class="card" id="sToolbar" style="display:none">
+      <div class="row">
+        <button class="btn sm" id="sDlAll" style="flex:1">全选下载（<span id="sSelCount">0</span> 篇）</button>
+        <button class="btn ghost sm" id="sClearSel" style="flex:0 0 auto">清空结果</button>
+      </div>
+      <p class="muted" style="margin-top:6px">已入库条目会自动跳过并计数；下载完成后按钮变「已入库 ✓」。</p>
     </div>
     <div class="prog" id="sProg" style="display:none;margin:0 0 10px"><i></i></div>
     <div id="sResults"></div>
@@ -883,9 +897,15 @@ $("#btnSum").addEventListener("click", () => {
 });
 
 /* ═══════════ 学术检索与下载（Crossref / OpenAlex / arXiv） ═══════════ */
-async function searchCrossref(query, isAuthor, rows) {
-  const param = isAuthor ? "query.author=" + encodeURIComponent(query) : "query=" + encodeURIComponent(query);
-  const url = "https://api.crossref.org/works?" + param + "&rows=" + rows + "&select=title,author,DOI,abstract,issued,container-title";
+async function searchCrossref(query, isAuthor, rows, authorExtra, yFrom, yTo) {
+  const filters = [];
+  if (yFrom) filters.push("from-pub-date:" + yFrom + "-01-01");
+  if (yTo) filters.push("until-pub-date:" + yTo + "-12-31");
+  const parts = [];
+  if (query) parts.push((isAuthor && !authorExtra ? "query.author=" : "query=") + encodeURIComponent(query));
+  if (authorExtra) parts.push("query.author=" + encodeURIComponent(authorExtra));
+  if (filters.length) parts.push("filter=" + filters.join(","));
+  const url = "https://api.crossref.org/works?" + parts.join("&") + "&rows=" + rows + "&select=title,author,DOI,abstract,issued,container-title";
   const r = await fetch(url, { headers: { "User-Agent": "litkb-app/1.5 (mailto:litkb@local)" } });
   if (!r.ok) throw new Error("Crossref HTTP " + r.status);
   const j = await r.json();
@@ -897,9 +917,16 @@ async function searchCrossref(query, isAuthor, rows) {
     doi: it.DOI || "", venue: (it["container-title"] && it["container-title"][0]) || ""
   }));
 }
-async function searchOpenAlex(query, isAuthor, rows) {
-  const param = isAuthor ? "filter=raw_author_name.search:" + encodeURIComponent(query) : "search=" + encodeURIComponent(query);
-  const url = "https://api.openalex.org/works?" + param + "&per-page=" + rows + "&select=title,authorships,publication_year,doi,abstract_inverted_index";
+async function searchOpenAlex(query, isAuthor, rows, authorExtra, yFrom, yTo) {
+  const filters = [];
+  if (query && isAuthor && !authorExtra) filters.push("raw_author_name.search:" + encodeURIComponent(query));
+  if (authorExtra) filters.push("raw_author_name.search:" + encodeURIComponent(authorExtra));
+  if (yFrom) filters.push("from_publication_date:" + yFrom + "-01-01");
+  if (yTo) filters.push("to_publication_date:" + yTo + "-12-31");
+  const parts = [];
+  if (filters.length) parts.push("filter=" + filters.join(","));
+  if (query && !(isAuthor && !authorExtra)) parts.push("search=" + encodeURIComponent(query));
+  const url = "https://api.openalex.org/works?" + parts.join("&") + "&per-page=" + rows + "&select=title,authorships,publication_year,doi,abstract_inverted_index";
   const r = await fetch(url);
   if (!r.ok) throw new Error("OpenAlex HTTP " + r.status);
   const j = await r.json();
@@ -919,9 +946,11 @@ async function searchOpenAlex(query, isAuthor, rows) {
     };
   });
 }
-async function searchArxiv(query, isAuthor, rows) {
-  const field = isAuthor ? "au" : "all";
-  const url = "https://export.arxiv.org/api/query?search_query=" + field + ":" + encodeURIComponent('"' + query + '"') + "&start=0&max_results=" + rows;
+async function searchArxiv(query, isAuthor, rows, authorExtra, yFrom, yTo) {
+  const conds = [];
+  if (query) conds.push((isAuthor && !authorExtra ? "au:" : "all:") + "\"" + query + "\"");
+  if (authorExtra) conds.push("au:\"" + authorExtra + "\"");
+  const url = "https://export.arxiv.org/api/query?search_query=" + encodeURIComponent(conds.join(" AND ")) + "&start=0&max_results=" + rows + "&sortBy=submittedDate&sortOrder=descending";
   const r = await fetch(url);
   if (!r.ok) throw new Error("arXiv HTTP " + r.status);
   const xml = await r.text();
@@ -939,18 +968,25 @@ async function searchArxiv(query, isAuthor, rows) {
 }
 async function doSearch() {
   const q = $("#sInput").value.trim();
-  if (!q) return toast("先输入检索词");
+  const authorExtra = $("#sAuthor").value.trim();
+  const yFrom = ($("#sYearFrom").value.trim() || "").replace(/[^0-9]/g, "").slice(0, 4);
+  const yTo = ($("#sYearTo").value.trim() || "").replace(/[^0-9]/g, "").slice(0, 4);
+  if (!q && !authorExtra) return toast("请至少填写关键词或作者之一");
+  if ((yFrom && yFrom.length !== 4) || (yTo && yTo.length !== 4)) return toast("年份格式应为 4 位数字，如 2020");
+  if (yFrom && yTo && parseInt(yFrom, 10) > parseInt(yTo, 10)) return toast("起始年不能晚于截止年");
   const src = $("#srcType").value, isAuthor = $("#sScope").value === "author";
   const rows = src === "crossref" ? 30 : 15;
   const box = $("#sResults"), prog = $("#sProg");
   btnDisable(true); box.innerHTML = '<div class="empty">正在检索 ' + esc(src) + ' …</div>'; prog.style.display = "block"; prog.firstElementChild.style.width = "30%";
   try {
     const fn = src === "crossref" ? searchCrossref : src === "openalex" ? searchOpenAlex : searchArxiv;
-    const list = (await fn(q, isAuthor, rows)).filter(it => it.title && it.title !== "Untitled");
+    let list = (await fn(q, isAuthor, rows, authorExtra, yFrom, yTo)).filter(it => it.title && it.title !== "Untitled");
+    if (yFrom) list = list.filter(it => !it.year || it.year >= parseInt(yFrom, 10));
+    if (yTo) list = list.filter(it => !it.year || it.year <= parseInt(yTo, 10));
     const withAbstract = list.filter(it => (it.abstract || "").length >= 50).length;
     window.__searchAbstractCount = withAbstract;
     prog.firstElementChild.style.width = "100%";
-    if (!list.length) { box.innerHTML = '<div class="empty">没有检索到结果，换个词试试。</div>'; return; }
+    if (!list.length) { box.innerHTML = '<div class="empty">没有检索到结果；可放宽年份区间或更换检索词。</div>'; $("#sToolbar").style.display = "none"; return; }
     window.__searchResults = list;
     box.innerHTML = "";
     list.forEach((it, idx) => {
@@ -959,12 +995,14 @@ async function doSearch() {
         '<div class="muted" style="margin:4px 0"></div>' +
         '<div class="snip"></div>' +
         '<div class="row" style="margin-top:8px"><button class="btn ghost sm dl" style="flex:1">下载入库</button></div>';
-      div.querySelector("div").textContent = it.title;
+      div.querySelector("div").textContent = (idx + 1) + ". " + it.title;
       div.querySelector(".muted").textContent = [it.authors.slice(0, 3).join("、") || "佚名", it.year, it.venue || (it.doi ? "DOI: " + it.doi : "")].filter(Boolean).join(" · ");
       div.querySelector(".snip").textContent = it.abstract ? (it.abstract.slice(0, 140) + (it.abstract.length > 140 ? "…" : "")) : "（该条无摘要；下载仅存标题与作者信息，建议换有摘要的条目或用全文 PDF 补充）";
       div.querySelector(".dl").addEventListener("click", () => importSearchItem(idx, div.querySelector(".dl")));
       box.appendChild(div);
     });
+    $("#sToolbar").style.display = "block";
+    updateSelCount();
   } catch (e) {
     box.innerHTML = '<div class="empty">检索失败：' + esc(e.message) + '</div>';
   } finally { btnDisable(false); prog.style.display = "none"; }
@@ -985,8 +1023,41 @@ async function importSearchItem(idx, btn) {
     topics: ["学术检索"], authors: it.authors.slice(0, 8),
     kind: "paper", year: it.year, origin: "search", fp
   });
-  if (saveLib()) { renderLib(); refreshScopeSel(); renderGroupCard(); btn.textContent = "已入库 ✓"; btn.disabled = true; toast("已下载入库：" + it.title.slice(0, 24)); }
+  if (saveLib()) { renderLib(); refreshScopeSel(); renderGroupCard(); btn.textContent = "已入库 ✓"; btn.disabled = true; toast("已下载入库：" + it.title.slice(0, 24)); updateSelCount(); }
 }
+function updateSelCount() {
+  const list = window.__searchResults || [];
+  const remaining = list.filter((it, i) => {
+    const btn = document.querySelectorAll("#sResults .dl")[i];
+    return btn && !btn.disabled;
+  }).length;
+  $("#sSelCount").textContent = remaining;
+}
+$("#sDlAll").addEventListener("click", async () => {
+  const btns = [...document.querySelectorAll("#sResults .dl")];
+  const active = btns.filter(b => !b.disabled);
+  if (!active.length) return toast("没有可下载的新条目（其余已在库中）");
+  $("#sDlAll").disabled = true;
+  let done = 0;
+  for (const b of btns) {
+    if (b.disabled) continue;
+    b.click();
+    await new Promise(r => setTimeout(r, 120));
+    done++;
+    $("#sDlAll").textContent = "下载中…（" + done + "/" + active.length + "）";
+  }
+  const finalBtns = [...document.querySelectorAll("#sResults .dl")];
+  const okCount = finalBtns.filter(b => b.disabled).length;
+  $("#sDlAll").disabled = false;
+  $("#sDlAll").textContent = "全选下载（0 篇）";
+  updateSelCount();
+  toast("批量下载完成：" + okCount + "/" + btns.length + " 篇已入库", 3200);
+});
+$("#sClearSel").addEventListener("click", () => {
+  $("#sResults").innerHTML = "";
+  $("#sToolbar").style.display = "none";
+  window.__searchResults = [];
+});
 $("#sBtn").addEventListener("click", doSearch);
 $("#sInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
 
