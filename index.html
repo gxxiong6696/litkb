@@ -941,11 +941,14 @@ async function doSearch() {
   const q = $("#sInput").value.trim();
   if (!q) return toast("先输入检索词");
   const src = $("#srcType").value, isAuthor = $("#sScope").value === "author";
+  const rows = src === "crossref" ? 30 : 15;
   const box = $("#sResults"), prog = $("#sProg");
   btnDisable(true); box.innerHTML = '<div class="empty">正在检索 ' + esc(src) + ' …</div>'; prog.style.display = "block"; prog.firstElementChild.style.width = "30%";
   try {
     const fn = src === "crossref" ? searchCrossref : src === "openalex" ? searchOpenAlex : searchArxiv;
-    const list = (await fn(q, isAuthor, 10)).filter(it => it.title && it.title !== "Untitled");
+    const list = (await fn(q, isAuthor, rows)).filter(it => it.title && it.title !== "Untitled");
+    const withAbstract = list.filter(it => (it.abstract || "").length >= 50).length;
+    window.__searchAbstractCount = withAbstract;
     prog.firstElementChild.style.width = "100%";
     if (!list.length) { box.innerHTML = '<div class="empty">没有检索到结果，换个词试试。</div>'; return; }
     window.__searchResults = list;
@@ -958,7 +961,7 @@ async function doSearch() {
         '<div class="row" style="margin-top:8px"><button class="btn ghost sm dl" style="flex:1">下载入库</button></div>';
       div.querySelector("div").textContent = it.title;
       div.querySelector(".muted").textContent = [it.authors.slice(0, 3).join("、") || "佚名", it.year, it.venue || (it.doi ? "DOI: " + it.doi : "")].filter(Boolean).join(" · ");
-      div.querySelector(".snip").textContent = it.abstract ? (it.abstract.slice(0, 140) + (it.abstract.length > 140 ? "…" : "")) : "（无摘要，入库后将只有标题行信息）";
+      div.querySelector(".snip").textContent = it.abstract ? (it.abstract.slice(0, 140) + (it.abstract.length > 140 ? "…" : "")) : "（该条无摘要；下载仅存标题与作者信息，建议换有摘要的条目或用全文 PDF 补充）";
       div.querySelector(".dl").addEventListener("click", () => importSearchItem(idx, div.querySelector(".dl")));
       box.appendChild(div);
     });
