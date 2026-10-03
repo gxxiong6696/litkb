@@ -1006,7 +1006,8 @@ function ask() {
   if (!q) return toast("先输入问题");
   if (!DOC_INDEX.length) { box.innerHTML = '<div class="card empty">库还是空的，先去「文献库」导入。</div>'; return; }
   const hits = search(q, { topK: 6, scope: currentScope() });
-  if (!hits.length) { box.innerHTML = '<div class="card empty">库里没有找到相关内容，换个问法试试。</div>'; return; }
+  const scopeName = (function(){ var s = currentScope(); return s ? (s.type === "topic" ? "主题：" : "作者：") + s.name : null; })();
+  if (!hits.length) { box.innerHTML = '<div class="card empty">' + (scopeName ? "在「" + esc(scopeName) + "」范围内没有找到相关内容；可切回全部文献或换个问法。" : "库里没有找到相关内容，换个问法试试。") + '</div>'; return; }
   const qTokens = [...new Set(tokenize(q).filter(termFilter))];
   box.innerHTML = `<div class="card"><h2>依据库内原文（按相关度排序）</h2>${
     hits.map((h, i) => `<div class="snip"><span class="cite">[${i + 1}] ${esc(h.doc.title)} · 第 ${h.chunk.page} 页</span><br>${hlSnippet(h.chunk.text, qTokens)}</div>`).join("")
