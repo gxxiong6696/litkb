@@ -985,7 +985,7 @@ async function importSearchItem(idx, btn) {
     topics: ["学术检索"], authors: it.authors.slice(0, 8),
     kind: "paper", year: it.year, origin: "search", fp
   });
-  if (saveLib()) { renderLib(); refreshScopeSel(); btn.textContent = "已入库 ✓"; btn.disabled = true; toast("已下载入库：" + it.title.slice(0, 24)); }
+  if (saveLib()) { renderLib(); refreshScopeSel(); renderGroupCard(); btn.textContent = "已入库 ✓"; btn.disabled = true; toast("已下载入库：" + it.title.slice(0, 24)); }
 }
 $("#sBtn").addEventListener("click", doSearch);
 $("#sInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
