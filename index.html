@@ -163,9 +163,12 @@
         <input type="text" id="sYearTo" placeholder="截止年" style="flex:0 0 96px" inputmode="numeric">
       </div>
       <div class="row" style="margin-top:8px">
+        <input type="text" id="sAff" placeholder="作者单位（可留空，与主题、作者同时满足）">
+      </div>
+      <div class="row" style="margin-top:8px">
         <button class="btn sm" id="sBtn" style="flex:1">检索</button>
       </div>
-      <p class="muted" style="margin-top:8px">关键词与作者可同时填写（同时命中）；年份区间为可选过滤。下载入库把标题、作者、年份、DOI 与摘要存入本机知识库，参与检索、问答与报告。专利检索继续走订阅链路。</p>
+      <p class="muted" style="margin-top:8px">关键词、作者、单位可同时填写（三条件同时满足：论文主题含关键词、作者列表含该作者且其署名单位含单位词）；年份区间为可选过滤。下载入库把标题、作者、年份、DOI 与摘要存入本机知识库，参与检索、问答与报告。专利检索继续走订阅链路。</p>
     </div>
     <div class="card" id="sToolbar" style="display:none">
       <div class="row">
@@ -295,7 +298,7 @@
       <div class="kv"><span>数据存储</span><b>手机本机</b></div>
       <div class="kv"><span>联网需求</span><b>默认离线 · 云端增强可选</b></div>
       <div class="kv"><span>账号体系</span><b>无</b></div>
-      <div class="kv"><span>版本</span><b id="stVersion">1.7.0 (17)</b></div>
+      <div class="kv"><span>版本</span><b id="stVersion">1.8.0 (18)</b></div>
     </div>
     <div class="card">
       <h2>关于本版</h2>
@@ -321,7 +324,7 @@
 "use strict";
 /* ═══════════ 基础 ═══════════ */
 const $ = (s) => document.querySelector(s);
-const APP_VERSION = "1.7.0", VERSION_CODE = 17;
+const APP_VERSION = "1.8.0", VERSION_CODE = 18;
 const CHUNK_SIZE = 320, CHUNK_OVERLAP = 60, MAX_CHUNKS_PER_DOC = 400;
 let DOC_INDEX = [];      // {id,title,src,pages,importedAt,chunks:[{text,page,tf:Map,len}],abstract}
 let SEARCH_TERMS = null; // Map term -> df
@@ -898,21 +901,23 @@ $("#btnSum").addEventListener("click", () => {
 });
 
 /* ═══════════ 学术检索与下载（Crossref / OpenAlex / arXiv） ═══════════ */
-async function searchCrossref(query, isAuthor, rows, authorExtra, yFrom, yTo) {
+async function searchCrossref(query, isAuthor, rows, authorExtra, yFrom, yTo, affExtra) {
   const filters = [];
   if (yFrom) filters.push("from-pub-date:" + yFrom + "-01-01");
   if (yTo) filters.push("until-pub-date:" + yTo + "-12-31");
   const parts = [];
   if (query) parts.push((isAuthor && !authorExtra ? "query.author=" : "query=") + encodeURIComponent(query));
   if (authorExtra) parts.push("query.author=" + encodeURIComponent(authorExtra));
+  if (affExtra) parts.push("query.affiliation=" + encodeURIComponent(affExtra));
   if (filters.length) parts.push("filter=" + filters.join(","));
   const url = "https://api.crossref.org/works?" + parts.join("&") + "&rows=" + rows + "&select=title,author,DOI,abstract,issued,container-title";
-  const r = await fetch(url, { headers: { "User-Agent": "litkb-app/1.5 (mailto:litkb@local)" } });
+  const r = await fetch(url, { headers: { "User-Agent": "litkb-app/1.8 (mailto:litkb@local)" } });
   if (!r.ok) throw new Error("Crossref HTTP " + r.status);
   const j = await r.json();
   const out = (j.message.items || []).map(it => ({
     title: (it.title && it.title[0]) || "Untitled",
     authors: (it.author || []).map(a => [a.given, a.family].filter(Boolean).join(" ")).filter(Boolean),
+    authorAffs: (it.author || []).map(a => ({ name: [a.given, a.family].filter(Boolean).join(" "), affs: (a.affiliation || []).map(x => String(x.name || "")) })),
     year: it.issued && it.issued["date-parts"] && it.issued["date-parts"][0] && it.issued["date-parts"][0][0] || null,
     abstract: (it.abstract || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
     doi: it.DOI || "", venue: (it["container-title"] && it["container-title"][0]) || ""
@@ -945,10 +950,11 @@ async function fillAbstractsFromOpenAlex(items) {
   }
   return items;
 }
-async function searchOpenAlex(query, isAuthor, rows, authorExtra, yFrom, yTo) {
+async function searchOpenAlex(query, isAuthor, rows, authorExtra, yFrom, yTo, affExtra) {
   const filters = [];
   if (query && isAuthor && !authorExtra) filters.push("raw_author_name.search:" + encodeURIComponent(query));
   if (authorExtra) filters.push("raw_author_name.search:" + encodeURIComponent(authorExtra));
+  if (affExtra) filters.push("raw_affiliation_strings.search:" + encodeURIComponent(affExtra));
   if (yFrom) filters.push("from_publication_date:" + yFrom + "-01-01");
   if (yTo) filters.push("to_publication_date:" + yTo + "-12-31");
   const parts = [];
@@ -968,13 +974,17 @@ async function searchOpenAlex(query, isAuthor, rows, authorExtra, yFrom, yTo) {
     return {
       title: it.title || "Untitled",
       authors: (it.authorships || []).map(a => a.author && a.author.display_name).filter(Boolean),
+      authorAffs: (it.authorships || []).map(a => ({
+        name: (a.author && a.author.display_name) || a.raw_author_name || "",
+        affs: [].concat(a.raw_affiliation_strings || [], (a.affiliations || []).flatMap(x => [x.raw_affiliation_string, x.institution && x.institution.display_name]).filter(Boolean))
+      })),
       year: it.publication_year || null,
       abstract: abstract.trim(),
       doi: (it.doi || "").replace("https://doi.org/", ""), venue: ""
     };
   });
 }
-async function searchArxiv(query, isAuthor, rows, authorExtra, yFrom, yTo) {
+async function searchArxiv(query, isAuthor, rows, authorExtra, yFrom, yTo, affExtra) {
   const conds = [];
   if (query) conds.push((isAuthor && !authorExtra ? "au:" : "all:") + "\"" + query + "\"");
   if (authorExtra) conds.push("au:\"" + authorExtra + "\"");
@@ -985,9 +995,15 @@ async function searchArxiv(query, isAuthor, rows, authorExtra, yFrom, yTo) {
   const doc = new DOMParser().parseFromString(xml, "text/xml");
   return [...doc.querySelectorAll("entry")].map(en => {
     const g = (tag) => { const el = en.querySelector(tag); return el ? el.textContent.trim() : ""; };
+    const authorAffs = [...en.querySelectorAll("author")].map(au => ({
+      name: (au.querySelector("name") || {}).textContent || "",
+      affs: [...au.getElementsByTagName("arxiv:affiliation")].map(x => x.textContent.trim()).filter(Boolean)
+    }));
+    // arXiv 无服务端单位过滤：单位词非空时在解析层预滤（完整校验在 doSearch 联动层）
     return {
       title: g("title").replace(/\s+/g, " "),
-      authors: [...en.querySelectorAll("author > name")].map(n => n.textContent),
+      authors: authorAffs.map(a => a.name).filter(Boolean),
+      authorAffs,
       year: (g("published").match(/^(\d{4})/) || [null, null])[1] ? parseInt(g("published").match(/^(\d{4})/)[1], 10) : null,
       abstract: g("summary").replace(/\s+/g, " "),
       doi: g("arxiv:doi") || "", venue: "arXiv"
@@ -997,9 +1013,10 @@ async function searchArxiv(query, isAuthor, rows, authorExtra, yFrom, yTo) {
 async function doSearch() {
   const q = $("#sInput").value.trim();
   const authorExtra = $("#sAuthor").value.trim();
+  const affExtra = $("#sAff").value.trim();
   const yFrom = ($("#sYearFrom").value.trim() || "").replace(/[^0-9]/g, "").slice(0, 4);
   const yTo = ($("#sYearTo").value.trim() || "").replace(/[^0-9]/g, "").slice(0, 4);
-  if (!q && !authorExtra) return toast("请至少填写关键词或作者之一");
+  if (!q && !authorExtra && !affExtra) return toast("请至少填写关键词、作者或单位之一");
   if ((yFrom && yFrom.length !== 4) || (yTo && yTo.length !== 4)) return toast("年份格式应为 4 位数字，如 2020");
   if (yFrom && yTo && parseInt(yFrom, 10) > parseInt(yTo, 10)) return toast("起始年不能晚于截止年");
   const src = $("#srcType").value, isAuthor = $("#sScope").value === "author";
@@ -1008,7 +1025,7 @@ async function doSearch() {
   btnDisable(true); box.innerHTML = '<div class="empty">正在检索 ' + esc(src) + ' …</div>'; prog.style.display = "block"; prog.firstElementChild.style.width = "30%";
   try {
     const fn = src === "crossref" ? searchCrossref : src === "openalex" ? searchOpenAlex : searchArxiv;
-    let list = (await fn(q, isAuthor, rows, authorExtra, yFrom, yTo)).filter(it => it.title && it.title !== "Untitled");
+    let list = (await fn(q, isAuthor, rows, authorExtra, yFrom, yTo, affExtra)).filter(it => it.title && it.title !== "Untitled");
     // 严格匹配姓名（默认开）：中文名去空格后全名相等；拉丁名分词顺序无关+连写兼容
     // 规则（用户 2026-10-04 指令）：作者栏填写的名字，只在论文作者列表中匹配——正文提及不算
     if ($("#sExact").checked && (authorExtra || (isAuthor && q))) {
@@ -1043,6 +1060,22 @@ async function doSearch() {
       // 再次标注（合并的新条目也标 author）+ 稳定排序：author 在前
       list.forEach(it => { if (!it.authorRole) it.authorRole = "mention"; });
       list.sort((a, b) => (b.authorRole === "author") - (a.authorRole === "author"));
+    }
+    // 作者单位筛选（V1.8）：单位词非空时，要求「主题+作者+单位」同时满足——同一作者的署名单位含单位词
+    if (affExtra) {
+      const affL = affExtra.toLowerCase();
+      const authorT = authorExtra ? authorExtra.replace(/\s+/g, "").toLowerCase() : (isAuthor && q ? q.replace(/\s+/g, "").toLowerCase() : "");
+      const strictOn = $("#sExact").checked;
+      const nameHit = (nm) => !authorT ? true : (strictOn ? nameStrictMatch(nm, authorT) : String(nm || "").replace(/\s+/g, "").toLowerCase().includes(authorT));
+      const affHit = (aa) => (aa.affs || []).some(x => String(x || "").toLowerCase().includes(affL));
+      list = list.filter(it => {
+        const aas = it.authorAffs || [];
+        if (aas.some(aa => nameHit(aa.name) && affHit(aa))) return true; // 联动：同一作者，姓名匹配且其署名单位含词
+        const hasAffData = aas.some(aa => (aa.affs || []).length);
+        if (!hasAffData) return (it.authors || []).some(a => nameHit(a)); // 数据源无单位元数据（如 Crossref 部分条目）→ 信任服务端粗筛，仅校验作者
+        return false;
+      });
+      if (!list.length) { box.innerHTML = '<div class="empty">没有同时满足主题、作者、单位的论文；可放宽单位关键词（如「清华」→「大学」）或换数据源重试。</div>'; $("#sToolbar").style.display = "none"; return; }
     }
     window.__searchResults = list;
     box.innerHTML = "";
