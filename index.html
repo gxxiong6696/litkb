@@ -150,6 +150,8 @@
           <option value="ss">Semantic Scholar 综合</option>
           <option value="pubmed">PubMed 生物医学</option>
           <option value="dblp">DBLP 计算机</option>
+          <option value="wos">Web of Science 订阅</option>
+          <option value="scopus">Scopus 订阅</option>
         </select>
         <select id="sScope" style="flex:0 0 100px">
           <option value="keyword">按关键词</option>
@@ -276,6 +278,17 @@
 
   <!-- ═══════════ 设置 ═══════════ -->
   <section class="view" id="view-set">
+    <div class="card" id="srcApiCard">
+      <h2>学术 API 数据源（BYOK）</h2>
+      <div class="kv"><span>WOS</span><b id="wosStatus">未配置</b></div>
+      <label class="muted">Web of Science Starter API Key（订阅用户在 Clarivate Developer Portal 申请，仅存本机）</label>
+      <div class="row" style="margin:6px 0 10px"><input type="password" id="wosKey" placeholder="WOS API Key" autocomplete="off"></div>
+      <div class="kv"><span>Scopus</span><b id="scopusStatus">未配置</b></div>
+      <label class="muted">Scopus API Key（机构订阅在 Elsevier Developer Portal 申请，仅存本机）</label>
+      <div class="row" style="margin:6px 0 10px"><input type="password" id="scopusKey" placeholder="Scopus API Key" autocomplete="off"></div>
+      <div class="row"><button class="btn sm" id="srcApiSave" style="flex:1">保存</button><button class="btn ghost sm" id="srcApiClear" style="flex:0 0 auto">清除</button></div>
+      <p class="muted" style="margin-top:8px">Google Scholar 无官方接口（禁止接口化访问），检索结果卡的「学术版」按钮即跳转 Scholar 搜索。WOS/Scopus 的 API 请求仅在选中对应源检索时发起。</p>
+    </div>
     <div class="card" id="aiCard">
       <h2>云端智能（DeepSeek · BYOK）</h2>
       <div class="kv"><span>状态</span><b id="aiStatus">未配置</b></div>
@@ -309,14 +322,14 @@
       <div class="kv"><span>数据存储</span><b>手机本机</b></div>
       <div class="kv"><span>联网需求</span><b>默认离线 · 云端增强可选</b></div>
       <div class="kv"><span>账号体系</span><b>无</b></div>
-      <div class="kv"><span>版本</span><b id="stVersion">2.1.0 (21)</b></div>
+      <div class="kv"><span>版本</span><b id="stVersion">2.2.0 (22)</b></div>
     </div>
     <div class="card">
       <h2>关于本版</h2>
       <div id="relNotes">
-        <div class="kv"><span>版本</span><b>2.1.0 (21)</b></div>
-        <div class="kv"><span>升级时间</span><b>2026-10-04 21:25</b></div>
-        <div class="kv"><span>升级内容</span><b>「关于本版」机制建立：自本版起每次升级自动更新版本号、升级时间与升级内容说明。回顾：V2.0 新增 AI 精选（DeepSeek 按主题打分排序、低分折叠）与按被引排序；V1.9 新增 Semantic Scholar / PubMed / DBLP 三源并将单次结果提额至 50/25 条。</b></div>
+        <div class="kv"><span>版本</span><b>2.2.0 (22)</b></div>
+        <div class="kv"><span>升级时间</span><b>2026-10-04 22:05</b></div>
+        <div class="kv"><span>升级内容</span><b>新增 Web of Science 与 Scopus 数据源（BYOK：在设置页填入订阅绑定的 API Key 即可用，支持作者/年份/单位过滤与 Scopus 被引排序）；Google Scholar 无官方接口，继续用检索结果卡「学术版」按钮跳转。Semantic Scholar 已于 V1.9 接入。</b></div>
       </div>
     </div>
   </section>
@@ -339,7 +352,7 @@
 "use strict";
 /* ═══════════ 基础 ═══════════ */
 const $ = (s) => document.querySelector(s);
-const APP_VERSION = "2.1.0", VERSION_CODE = 21;
+const APP_VERSION = "2.2.0", VERSION_CODE = 22;
 const CHUNK_SIZE = 320, CHUNK_OVERLAP = 60, MAX_CHUNKS_PER_DOC = 400;
 let DOC_INDEX = [];      // {id,title,src,pages,importedAt,chunks:[{text,page,tf:Map,len}],abstract}
 let SEARCH_TERMS = null; // Map term -> df
@@ -1107,6 +1120,103 @@ async function searchDBLP(query, isAuthor, rows, authorExtra, yFrom, yTo) {
     };
   });
 }
+
+/* ═══════════ V2.2 订阅源：Web of Science / Scopus（BYOK） ═══════════ */
+function wosKey() { return (localStorage.getItem("WOS_KEY") || "").trim(); }
+function scopusKey() { return (localStorage.getItem("SCOPUS_KEY") || "").trim(); }
+function srcApiInit() {
+  const wk = wosKey(), sk = scopusKey();
+  const wEl = $("#wosKey"), sEl = $("#scopusKey");
+  if (wEl && wk) wEl.value = wk;
+  if (sEl && sk) sEl.value = sk;
+  const wS = $("#wosStatus"), sS = $("#scopusStatus");
+  if (wS) wS.textContent = wk ? "已配置" : "未配置";
+  if (sS) sS.textContent = sk ? "已配置" : "未配置";
+}
+$("#srcApiSave").addEventListener("click", () => {
+  const wk = $("#wosKey").value.trim(), sk = $("#scopusKey").value.trim();
+  if (wk) localStorage.setItem("WOS_KEY", wk); else localStorage.removeItem("WOS_KEY");
+  if (sk) localStorage.setItem("SCOPUS_KEY", sk); else localStorage.removeItem("SCOPUS_KEY");
+  srcApiInit();
+  toast("学术 API Key 已保存（仅存本机）");
+});
+$("#srcApiClear").addEventListener("click", () => {
+  $("#wosKey").value = ""; $("#scopusKey").value = "";
+  localStorage.removeItem("WOS_KEY"); localStorage.removeItem("SCOPUS_KEY");
+  srcApiInit();
+  toast("已清除学术 API Key");
+});
+async function searchWos(query, isAuthor, rows, authorExtra, yFrom, yTo, affExtra) {
+  const key = wosKey();
+  if (!key) throw new Error("未配置 Web of Science API Key（设置页 → 学术 API 数据源）");
+  const terms = [];
+  if (query && !(isAuthor && !authorExtra)) terms.push("TS=(\"" + query + "\")");
+  if (query && isAuthor && !authorExtra) terms.push("AU=(\"" + query + "\")");
+  if (authorExtra) terms.push("AU=(\"" + authorExtra + "\")");
+  if (affExtra) terms.push("AD=(\"" + affExtra + "\")");
+  if (yFrom || yTo) terms.push("PY=(" + (yFrom || "1900") + "-" + (yTo || "2100") + ")");
+  const r = await fetch("https://api.clarivate.com/api/wos-starter/records", {
+    method: "POST",
+    headers: { "X-ApiKey": key, "Content-Type": "application/json" },
+    body: JSON.stringify({ databaseId: "WOS", usrQuery: terms.join(" AND "), count: rows, firstRecord: 1 })
+  });
+  if (r.status === 401 || r.status === 403) throw new Error("WOS Key 无效或无权限（" + r.status + "）");
+  if (!r.ok) throw new Error("WOS HTTP " + r.status);
+  const j = await r.json();
+  const recs = j.Records || [];
+  return recs.map(it => {
+    const g = (v) => (v && typeof v === "object" && v.value != null) ? String(v.value) : (v != null ? String(v) : "");
+    const authors = (it.authors || []).map(a => String(a.full_name || "").trim()).filter(Boolean);
+    const authorAffs = (it.authors || []).map(a => {
+      const aff = a.affiliation;
+      const affs = aff ? [ (aff && typeof aff === "object") ? (aff.name || aff.full_name || "") : String(aff) ].filter(Boolean) : [];
+      return { name: String(a.full_name || "").trim(), affs };
+    });
+    let doi = String(it.doi || it.other_ids && it.other_ids.DOI || "").replace(/^DOI:\s*/i, "").trim();
+    return {
+      title: g(it.title).replace(/\s+/g, " ") || "Untitled",
+      authors, authorAffs,
+      year: (String(it.pubyear || "").match(/(\d{4})/) || [null, null])[1] ? parseInt(String(it.pubyear).match(/(\d{4})/)[1], 10) : null,
+      abstract: g(it.abstract).replace(/\s+/g, " ").trim(),
+      doi, venue: g(it.source && it.source.sourceTitle) || "Web of Science",
+      cites: null
+    };
+  }).filter(it => it.title && it.title !== "Untitled");
+}
+async function searchScopus(query, isAuthor, rows, authorExtra, yFrom, yTo, affExtra) {
+  const key = scopusKey();
+  if (!key) throw new Error("未配置 Scopus API Key（设置页 → 学术 API 数据源）");
+  const terms = [];
+  if (query && !(isAuthor && !authorExtra)) terms.push("TITLE-ABS-KEY(" + query + ")");
+  if (query && isAuthor && !authorExtra) terms.push("AUTH-NAME(" + query + ")");
+  if (authorExtra) terms.push("AUTH-NAME(" + authorExtra + ")");
+  if (affExtra) terms.push("AFFIL(" + affExtra + ")");
+  if (yFrom) terms.push("PUBYEAR > " + (parseInt(yFrom, 10) - 1));
+  if (yTo) terms.push("PUBYEAR < " + (parseInt(yTo, 10) + 1));
+  const url = "https://api.elsevier.com/content/search/scopus?query=" + encodeURIComponent(terms.join(" AND ")) + "&count=" + rows + "&start=0&view=COMPLETE";
+  const r = await fetch(url, { headers: { "X-Elsevier-API-Key": key, "Accept": "application/json" } });
+  if (r.status === 401 || r.status === 403) throw new Error("Scopus Key 无效或无权限（" + r.status + "）");
+  if (!r.ok) throw new Error("Scopus HTTP " + r.status);
+  const j = await r.json();
+  const entries = (j["search-results"] && j["search-results"].entry) || [];
+  return entries.filter(en => !en.error).map(en => {
+    const creator = String(en["dc:creator"] || "").trim();
+    const affs0 = (en.affiliation || []).map(a => String(a.affilname || "")).filter(Boolean);
+    let doi = String(en["prism:doi"] || "").trim();
+    return {
+      title: String(en["dc:title"] || "Untitled").replace(/\s+/g, " "),
+      authors: creator ? [creator] : [],
+      authorAffs: [],
+      firstAff: affs0[0] || "",
+      clientFilterSkip: true, // Scopus search 仅返回第一作者，服务端 AUTH-NAME 已按全作者匹配，客户端不再严判
+      year: (String(en["prism:coverDate"] || "").match(/^(\d{4})/) || [null, null])[1] ? parseInt(String(en["prism:coverDate"]).match(/^(\d{4})/)[1], 10) : null,
+      abstract: String(en["dc:description"] || "").replace(/\s+/g, " ").trim(),
+      doi, venue: String(en["prism:publicationName"] || "Scopus"),
+      cites: (typeof en["citedby-count"] === "number") ? en["citedby-count"] : (parseInt(en["citedby-count"], 10) || null)
+    };
+  }).filter(it => it.title && it.title !== "Untitled");
+}
+
 async function doSearch() {
   const q = $("#sInput").value.trim();
   const authorExtra = $("#sAuthor").value.trim();
@@ -1118,17 +1228,19 @@ async function doSearch() {
   if (yFrom && yTo && parseInt(yFrom, 10) > parseInt(yTo, 10)) return toast("起始年不能晚于截止年");
   const src = $("#srcType").value, isAuthor = $("#sScope").value === "author";
   if (affExtra && (src === "ss" || src === "dblp")) return toast("该源无作者单位数据；单位筛选请用 OpenAlex、Crossref、arXiv 或 PubMed");
+  if (src === "wos" && !wosKey()) return toast("请先在设置页「学术 API 数据源」填入 Web of Science API Key");
+  if (src === "scopus" && !scopusKey()) return toast("请先在设置页「学术 API 数据源」填入 Scopus API Key");
   const rows = src === "crossref" ? 50 : 25;
   const box = $("#sResults"), prog = $("#sProg");
   btnDisable(true); box.innerHTML = '<div class="empty">正在检索 ' + esc(src) + ' …</div>'; prog.style.display = "block"; prog.firstElementChild.style.width = "30%";
   try {
-    const fn = src === "crossref" ? searchCrossref : src === "openalex" ? searchOpenAlex : src === "arxiv" ? searchArxiv : src === "ss" ? searchSemanticScholar : src === "pubmed" ? searchPubMed : searchDBLP;
+    const fn = src === "crossref" ? searchCrossref : src === "openalex" ? searchOpenAlex : src === "arxiv" ? searchArxiv : src === "ss" ? searchSemanticScholar : src === "pubmed" ? searchPubMed : src === "wos" ? searchWos : src === "scopus" ? searchScopus : searchDBLP;
     let list = (await fn(q, isAuthor, rows, authorExtra, yFrom, yTo, affExtra)).filter(it => it.title && it.title !== "Untitled");
     // 严格匹配姓名（默认开）：中文名去空格后全名相等；拉丁名分词顺序无关+连写兼容
     // 规则（用户 2026-10-04 指令）：作者栏填写的名字，只在论文作者列表中匹配——正文提及不算
     if ($("#sExact").checked && (authorExtra || (isAuthor && q))) {
       const target = (authorExtra || q).replace(/\s+/g, "").toLowerCase();
-      list = list.filter(it => (it.authors || []).some(a => nameStrictMatch(a, target)));
+      list = list.filter(it => it.clientFilterSkip || (it.authors || []).some(a => nameStrictMatch(a, target)));
     }
     if (yFrom) list = list.filter(it => !it.year || it.year >= parseInt(yFrom, 10));
     if (yTo) list = list.filter(it => !it.year || it.year <= parseInt(yTo, 10));
@@ -1169,6 +1281,7 @@ async function doSearch() {
       list = list.filter(it => {
         const aas = it.authorAffs || [];
         if (aas.some(aa => nameHit(aa.name) && affHit(aa))) return true; // 联动：同一作者，姓名匹配且其署名单位含词
+        if (!aas.length && it.firstAff) return (it.authors || []).some(a => nameHit(a)) && String(it.firstAff).toLowerCase().includes(affL); // Scopus：第一作者单位近似
         const hasAffData = aas.some(aa => (aa.affs || []).length);
         if (!hasAffData) return (it.authors || []).some(a => nameHit(a)); // 数据源无单位元数据（如 Crossref 部分条目）→ 信任服务端粗筛，仅校验作者
         return false;
@@ -1179,7 +1292,7 @@ async function doSearch() {
     renderSearchCards(list);
 
   } catch (e) {
-    box.innerHTML = '<div class="empty">检索失败：' + esc(e.message) + '（若在网页版：arXiv / DBLP 受跨域限制，请在 APK 内使用，或改用 OpenAlex / Crossref / PubMed / Semantic Scholar）</div>';
+    box.innerHTML = '<div class="empty">检索失败：' + esc(e.message) + '（若在网页版：arXiv / DBLP / WOS / Scopus 受跨域限制，请在 APK 内使用，或改用 OpenAlex / Crossref / PubMed / Semantic Scholar）</div>';
   } finally { btnDisable(false); prog.style.display = "none"; }
   function btnDisable(dis) { $("#sBtn").disabled = dis; $("#sBtn").textContent = dis ? "检索中…" : "检索"; }
 }
@@ -1334,7 +1447,7 @@ $("#sAiPick").addEventListener("click", aiPick);
 $("#sCiteSort").addEventListener("click", () => {
   const list = window.__searchResults || [];
   const has = list.some(it => typeof it.cites === "number");
-  if (!has) return toast("当前源无被引数据；请用 OpenAlex / Crossref / Semantic Scholar");
+  if (!has) return toast("当前源无被引数据；请用 OpenAlex / Crossref / Scopus / Semantic Scholar");
   list.sort((a, b) => (b.cites || 0) - (a.cites || 0));
   renderSearchCards(list);
   toast("已按被引排序（无数据条目排后）", 2400);
@@ -1827,6 +1940,7 @@ async function aiSlidePoints(s, hitsForSection, slideTopic) {
 
 /* AI 初始化：必须在 AI 配置与全部函数定义之后执行 */
 try { initAI(); } catch (e) { console.error("initAI failed", e); }
+try { srcApiInit(); } catch (e) { console.error("srcApiInit failed", e); }
 </script>
 </body>
 </html>
