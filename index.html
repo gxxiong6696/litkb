@@ -142,21 +142,25 @@
   <section class="view" id="view-search">
     <div class="card">
       <h2>学术检索与下载</h2>
-      <div class="row">
-        <select id="srcType" style="flex:0 0 158px">
-          <option value="openalex">OpenAlex 期刊</option>
-          <option value="crossref">Crossref 期刊</option>
-          <option value="arxiv">arXiv 预印本</option>
-          <option value="ss">Semantic Scholar 综合</option>
-          <option value="pubmed">PubMed 生物医学</option>
-          <option value="dblp">DBLP 计算机</option>
-          <option value="wos">Web of Science 订阅</option>
-          <option value="scopus">Scopus 订阅</option>
-        </select>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:4px 10px" id="srcChecks">
+        <label class="muted" style="font-size:12px">数据源（可多选）：</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--ink2)"><input type="checkbox" value="openalex" checked style="width:14px;height:14px">OpenAlex</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--ink2)"><input type="checkbox" value="crossref" style="width:14px;height:14px">Crossref</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--ink2)"><input type="checkbox" value="arxiv" style="width:14px;height:14px">arXiv</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--ink2)"><input type="checkbox" value="ss" style="width:14px;height:14px">Semantic Scholar</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--ink2)"><input type="checkbox" value="pubmed" style="width:14px;height:14px">PubMed</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--ink2)"><input type="checkbox" value="dblp" style="width:14px;height:14px">DBLP</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--ink2)"><input type="checkbox" value="wos" style="width:14px;height:14px">WOS</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--ink2)"><input type="checkbox" value="scopus" style="width:14px;height:14px">Scopus</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--ink2)"><input type="checkbox" value="lens" style="width:14px;height:14px">Lens 专利</label>
+      </div>
+      <div class="row" style="margin-top:8px">
         <select id="sScope" style="flex:0 0 100px">
           <option value="keyword">按关键词</option>
           <option value="author">按作者</option>
         </select>
+        <button class="btn ghost sm" id="sAllSrc" style="flex:0 0 auto">全选源</button>
+        <button class="btn ghost sm" id="sNoSrc" style="flex:0 0 auto">清除</button>
         <label style="flex:1;display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink2)"><input type="checkbox" id="sExact" checked style="width:16px;height:16px">严格匹配姓名</label>
       </div>
       <div class="row" style="margin-top:8px">
@@ -286,6 +290,9 @@
       <div class="kv"><span>Scopus</span><b id="scopusStatus">未配置</b></div>
       <label class="muted">Scopus API Key（机构订阅在 Elsevier Developer Portal 申请，仅存本机）</label>
       <div class="row" style="margin:6px 0 10px"><input type="password" id="scopusKey" placeholder="Scopus API Key" autocomplete="off"></div>
+      <div class="kv"><span>Lens 专利</span><b id="lensStatus">未配置</b></div>
+      <label class="muted">Lens.org Patents API Token（lens.org 免费注册申请，覆盖全球 1.4 亿+ 专利，仅存本机）</label>
+      <div class="row" style="margin:6px 0 10px"><input type="password" id="lensKey" placeholder="Lens API Token" autocomplete="off"></div>
       <div class="row"><button class="btn sm" id="srcApiSave" style="flex:1">保存</button><button class="btn ghost sm" id="srcApiClear" style="flex:0 0 auto">清除</button></div>
       <p class="muted" style="margin-top:8px">Google Scholar 无官方接口（禁止接口化访问），检索结果卡的「学术版」按钮即跳转 Scholar 搜索。WOS/Scopus 的 API 请求仅在选中对应源检索时发起。</p>
     </div>
@@ -322,14 +329,14 @@
       <div class="kv"><span>数据存储</span><b>手机本机</b></div>
       <div class="kv"><span>联网需求</span><b>默认离线 · 云端增强可选</b></div>
       <div class="kv"><span>账号体系</span><b>无</b></div>
-      <div class="kv"><span>版本</span><b id="stVersion">2.2.0 (22)</b></div>
+      <div class="kv"><span>版本</span><b id="stVersion">2.3.0 (23)</b></div>
     </div>
     <div class="card">
       <h2>关于本版</h2>
       <div id="relNotes">
-        <div class="kv"><span>版本</span><b>2.2.0 (22)</b></div>
-        <div class="kv"><span>升级时间</span><b>2026-10-04 22:05</b></div>
-        <div class="kv"><span>升级内容</span><b>新增 Web of Science 与 Scopus 数据源（BYOK：在设置页填入订阅绑定的 API Key 即可用，支持作者/年份/单位过滤与 Scopus 被引排序）；Google Scholar 无官方接口，继续用检索结果卡「学术版」按钮跳转。Semantic Scholar 已于 V1.9 接入。</b></div>
+        <div class="kv"><span>版本</span><b>2.3.0 (23)</b></div>
+        <div class="kv"><span>升级时间</span><b>2026-10-04 22:30</b></div>
+        <div class="kv"><span>升级内容</span><b>数据源支持多选：勾选多个源并行检索、跨源按 DOI/标题自动去重、单源失败不影响其他源；新增全球专利源 Lens Patents（BYOK，按发明人/申请人/公开年过滤），专利检索首次内置。回顾：V2.2 接入 WOS/Scopus（BYOK）。</b></div>
       </div>
     </div>
   </section>
@@ -352,7 +359,7 @@
 "use strict";
 /* ═══════════ 基础 ═══════════ */
 const $ = (s) => document.querySelector(s);
-const APP_VERSION = "2.2.0", VERSION_CODE = 22;
+const APP_VERSION = "2.3.0", VERSION_CODE = 23;
 const CHUNK_SIZE = 320, CHUNK_OVERLAP = 60, MAX_CHUNKS_PER_DOC = 400;
 let DOC_INDEX = [];      // {id,title,src,pages,importedAt,chunks:[{text,page,tf:Map,len}],abstract}
 let SEARCH_TERMS = null; // Map term -> df
@@ -1124,28 +1131,67 @@ async function searchDBLP(query, isAuthor, rows, authorExtra, yFrom, yTo) {
 /* ═══════════ V2.2 订阅源：Web of Science / Scopus（BYOK） ═══════════ */
 function wosKey() { return (localStorage.getItem("WOS_KEY") || "").trim(); }
 function scopusKey() { return (localStorage.getItem("SCOPUS_KEY") || "").trim(); }
+function lensKey() { return (localStorage.getItem("LENS_KEY") || "").trim(); }
 function srcApiInit() {
   const wk = wosKey(), sk = scopusKey();
   const wEl = $("#wosKey"), sEl = $("#scopusKey");
   if (wEl && wk) wEl.value = wk;
   if (sEl && sk) sEl.value = sk;
-  const wS = $("#wosStatus"), sS = $("#scopusStatus");
+  const lEl = $("#lensKey"), lk = lensKey();
+  if (lEl && lk) lEl.value = lk;
+  const wS = $("#wosStatus"), sS = $("#scopusStatus"), lS = $("#lensStatus");
   if (wS) wS.textContent = wk ? "已配置" : "未配置";
   if (sS) sS.textContent = sk ? "已配置" : "未配置";
+  if (lS) lS.textContent = lk ? "已配置" : "未配置";
 }
 $("#srcApiSave").addEventListener("click", () => {
   const wk = $("#wosKey").value.trim(), sk = $("#scopusKey").value.trim();
   if (wk) localStorage.setItem("WOS_KEY", wk); else localStorage.removeItem("WOS_KEY");
   if (sk) localStorage.setItem("SCOPUS_KEY", sk); else localStorage.removeItem("SCOPUS_KEY");
+  const lk = $("#lensKey").value.trim();
+  if (lk) localStorage.setItem("LENS_KEY", lk); else localStorage.removeItem("LENS_KEY");
   srcApiInit();
   toast("学术 API Key 已保存（仅存本机）");
 });
 $("#srcApiClear").addEventListener("click", () => {
-  $("#wosKey").value = ""; $("#scopusKey").value = "";
-  localStorage.removeItem("WOS_KEY"); localStorage.removeItem("SCOPUS_KEY");
+  $("#wosKey").value = ""; $("#scopusKey").value = ""; $("#lensKey").value = "";
+  localStorage.removeItem("WOS_KEY"); localStorage.removeItem("SCOPUS_KEY"); localStorage.removeItem("LENS_KEY");
   srcApiInit();
   toast("已清除学术 API Key");
 });
+async function searchLensPatents(query, isAuthor, rows, authorExtra, yFrom, yTo, affExtra) {
+  const key = lensKey();
+  if (!key) throw new Error("未配置 Lens 专利 Token（设置页 → 学术 API 数据源）");
+  const must = [];
+  if (query && !(isAuthor && !authorExtra)) must.push({ match: { search_text: query } });
+  if (query && isAuthor && !authorExtra) must.push({ match: { inventor: query } });
+  if (authorExtra) must.push({ match: { inventor: authorExtra } });
+  if (affExtra) must.push({ match: { applicant: affExtra } });
+  if (yFrom || yTo) must.push({ range: { date_published: { gte: (yFrom || "1900") + "-01-01", lte: (yTo || "2100") + "-12-31" } } });
+  const body = { query: { bool: { must } }, pagination: { size: rows, from: 0 } };
+  const r = await fetch("https://api.lens.org/patent/search?token=" + encodeURIComponent(key), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+  });
+  if (r.status === 401 || r.status === 403) throw new Error("Lens Token 无效或无权限（" + r.status + "）");
+  if (!r.ok) throw new Error("Lens HTTP " + r.status);
+  const j = await r.json();
+  const data = j.data || [];
+  return data.map(en => {
+    const fd = en.fields || {};
+    const invs = (fd.inventor || []).map(x => String(x || "").trim()).filter(Boolean);
+    const appl = (fd.applicant || []).map(x => String(x || "").trim()).filter(Boolean);
+    return {
+      title: String((fd.title || [])[0] || "Untitled").replace(/\s+/g, " "),
+      authors: invs,
+      authorAffs: [],
+      firstAff: appl[0] || "",
+      year: (String(fd.date_published || "").match(/^(\d{4})/) || [null, null])[1] ? parseInt(String(fd.date_published).match(/^(\d{4})/)[1], 10) : null,
+      abstract: String((fd.abstract || [])[0] || "").replace(/\s+/g, " ").trim(),
+      doi: "", venue: "Lens Patents",
+      cites: null
+    };
+  }).filter(it => it.title && it.title !== "Untitled");
+}
 async function searchWos(query, isAuthor, rows, authorExtra, yFrom, yTo, affExtra) {
   const key = wosKey();
   if (!key) throw new Error("未配置 Web of Science API Key（设置页 → 学术 API 数据源）");
@@ -1217,6 +1263,14 @@ async function searchScopus(query, isAuthor, rows, authorExtra, yFrom, yTo, affE
   }).filter(it => it.title && it.title !== "Untitled");
 }
 
+async function runOneSource(s, q, isAuthor, rows, authorExtra, yFrom, yTo, affExtra) {
+  if ((s === "ss" || s === "dblp") && affExtra) throw new Error("该源无作者单位数据，取消勾选或去单位词");
+  if (s === "wos" && !wosKey()) throw new Error("未配置 Web of Science Key（设置页）");
+  if (s === "scopus" && !scopusKey()) throw new Error("未配置 Scopus Key（设置页）");
+  if (s === "lens" && !lensKey()) throw new Error("未配置 Lens 专利 Token（设置页）");
+  const fn = s === "crossref" ? searchCrossref : s === "openalex" ? searchOpenAlex : s === "arxiv" ? searchArxiv : s === "ss" ? searchSemanticScholar : s === "pubmed" ? searchPubMed : s === "wos" ? searchWos : s === "scopus" ? searchScopus : s === "lens" ? searchLensPatents : searchDBLP;
+  return (await fn(q, isAuthor, rows, authorExtra, yFrom, yTo, affExtra)).filter(it => it.title && it.title !== "Untitled");
+}
 async function doSearch() {
   const q = $("#sInput").value.trim();
   const authorExtra = $("#sAuthor").value.trim();
@@ -1226,16 +1280,30 @@ async function doSearch() {
   if (!q && !authorExtra && !affExtra) return toast("请至少填写关键词、作者或单位之一");
   if ((yFrom && yFrom.length !== 4) || (yTo && yTo.length !== 4)) return toast("年份格式应为 4 位数字，如 2020");
   if (yFrom && yTo && parseInt(yFrom, 10) > parseInt(yTo, 10)) return toast("起始年不能晚于截止年");
-  const src = $("#srcType").value, isAuthor = $("#sScope").value === "author";
-  if (affExtra && (src === "ss" || src === "dblp")) return toast("该源无作者单位数据；单位筛选请用 OpenAlex、Crossref、arXiv 或 PubMed");
-  if (src === "wos" && !wosKey()) return toast("请先在设置页「学术 API 数据源」填入 Web of Science API Key");
-  if (src === "scopus" && !scopusKey()) return toast("请先在设置页「学术 API 数据源」填入 Scopus API Key");
-  const rows = src === "crossref" ? 50 : 25;
+  const srcs = [...document.querySelectorAll("#srcChecks input:checked")].map(x => x.value);
+  const isAuthor = $("#sScope").value === "author";
+  if (!srcs.length) return toast("请至少勾选一个数据源");
+  const rows = srcs.length > 1 ? 20 : (srcs[0] === "crossref" ? 50 : 25);
   const box = $("#sResults"), prog = $("#sProg");
-  btnDisable(true); box.innerHTML = '<div class="empty">正在检索 ' + esc(src) + ' …</div>'; prog.style.display = "block"; prog.firstElementChild.style.width = "30%";
+  btnDisable(true); box.innerHTML = '<div class="empty">正在检索 ' + srcs.length + ' 个数据源：' + esc(srcs.join("、")) + ' …</div>'; prog.style.display = "block"; prog.firstElementChild.style.width = "30%";
   try {
-    const fn = src === "crossref" ? searchCrossref : src === "openalex" ? searchOpenAlex : src === "arxiv" ? searchArxiv : src === "ss" ? searchSemanticScholar : src === "pubmed" ? searchPubMed : src === "wos" ? searchWos : src === "scopus" ? searchScopus : searchDBLP;
-    let list = (await fn(q, isAuthor, rows, authorExtra, yFrom, yTo, affExtra)).filter(it => it.title && it.title !== "Untitled");
+    const results = await Promise.allSettled(srcs.map(s => runOneSource(s, q, isAuthor, rows, authorExtra, yFrom, yTo, affExtra)));
+    let merged = []; const failed = [];
+    results.forEach((res, i) => {
+      if (res.status === "fulfilled") merged.push(...res.value);
+      else failed.push(srcs[i] + "（" + String(res.reason && res.reason.message || "").slice(0, 60) + "）");
+    });
+    // 跨源去重：DOI 优先，无 DOI 用标题+年份指纹；重复时保留被引较高者
+    const seen = new Map(); let dupCount = 0;
+    for (const it of merged) {
+      const k = (it.doi || "").toLowerCase() || contentFingerprint(it.title, it.title + (it.year || ""));
+      if (seen.has(k)) { dupCount++; const prev = seen.get(k); if ((it.cites || 0) > (prev.cites || 0)) prev.cites = it.cites; continue; }
+      seen.set(k, it);
+    }
+    const dedup = [...seen.values()];
+    let list = dedup;
+    window.__failedSources = failed;
+    window.__dupCount = dupCount;
     // 严格匹配姓名（默认开）：中文名去空格后全名相等；拉丁名分词顺序无关+连写兼容
     // 规则（用户 2026-10-04 指令）：作者栏填写的名字，只在论文作者列表中匹配——正文提及不算
     if ($("#sExact").checked && (authorExtra || (isAuthor && q))) {
@@ -1290,6 +1358,8 @@ async function doSearch() {
     }
     window.__searchResults = list;
     renderSearchCards(list);
+    if (failed.length) toast("部分源未返回：" + failed.join("；"), 4500);
+    if (dupCount) toast("跨源去重：" + dupCount + " 条重复已合并", 2600);
 
   } catch (e) {
     box.innerHTML = '<div class="empty">检索失败：' + esc(e.message) + '（若在网页版：arXiv / DBLP / WOS / Scopus 受跨域限制，请在 APK 内使用，或改用 OpenAlex / Crossref / PubMed / Semantic Scholar）</div>';
@@ -1348,6 +1418,8 @@ $("#sClearSel").addEventListener("click", () => {
 });
 $("#sBtn").addEventListener("click", doSearch);
 $("#sInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
+$("#sAllSrc").addEventListener("click", () => { document.querySelectorAll("#srcChecks input[type=checkbox]").forEach(c => c.checked = true); });
+$("#sNoSrc").addEventListener("click", () => { document.querySelectorAll("#srcChecks input[type=checkbox]").forEach(c => c.checked = false); });
 /* ═══════════ V2.0 结果渲染（doSearch / AI 精选 / 被引排序共用） ═══════════ */
 function renderSearchCards(list) {
   const box = $("#sResults");
