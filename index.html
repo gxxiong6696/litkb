@@ -1015,13 +1015,14 @@ async function searchArxiv(query, isAuthor, rows, authorExtra, yFrom, yTo, affEx
 }
 /* ─── V1.9 新增数据源：Semantic Scholar / PubMed / DBLP ─── */
 async function searchSemanticScholar(query, isAuthor, rows, authorExtra, yFrom, yTo) {
-  // SS 无独立作者/单位服务端过滤（paper search）：作者名拼入相关性检索，客户端严格过滤兑底
+  // SS 无独立作者/单位服务端过滤（paper search）：作者名拼入相关性检索，客户端严格过滤兑底；无 key 限流 429 时重试一次
   const terms = [];
   if (query) terms.push(query);
   if (authorExtra) terms.push(authorExtra);
   const url = "https://api.semanticscholar.org/graph/v1/paper/search?query=" + encodeURIComponent(terms.join(" ")) +
     "&limit=" + rows + "&fields=title,abstract,year,authors.name,externalIds,venue";
-  const r = await fetch(url);
+  let r = await fetch(url);
+  if (r.status === 429 || r.status === 504) { await new Promise(res => setTimeout(res, 1800)); r = await fetch(url); }
   if (!r.ok) throw new Error("SS HTTP " + r.status);
   const j = await r.json();
   return (j.data || []).map(it => ({
@@ -1200,7 +1201,7 @@ async function doSearch() {
     $("#sToolbar").style.display = "block";
     updateSelCount();
   } catch (e) {
-    box.innerHTML = '<div class="empty">检索失败：' + esc(e.message) + '</div>';
+    box.innerHTML = '<div class="empty">检索失败：' + esc(e.message) + '（若在网页版：arXiv / DBLP 受跨域限制，请在 APK 内使用，或改用 OpenAlex / Crossref / PubMed / Semantic Scholar）</div>';
   } finally { btnDisable(false); prog.style.display = "none"; }
   function btnDisable(dis) { $("#sBtn").disabled = dis; $("#sBtn").textContent = dis ? "检索中…" : "检索"; }
 }
