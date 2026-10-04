@@ -1234,6 +1234,7 @@ $("#sInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearc
 /* ═══════════ V2.0 结果渲染（doSearch / AI 精选 / 被引排序共用） ═══════════ */
 function renderSearchCards(list) {
   const box = $("#sResults");
+  const aiOnlyOn = $("#sAiOnly") && $("#sAiOnly").checked;
   box.innerHTML = "";
     list.forEach((it, idx) => {
       const div = document.createElement("div"); div.className = "card"; div.style.marginBottom = "10px";
