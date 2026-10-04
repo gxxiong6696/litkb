@@ -1010,21 +1010,10 @@ async function doSearch() {
     const fn = src === "crossref" ? searchCrossref : src === "openalex" ? searchOpenAlex : searchArxiv;
     let list = (await fn(q, isAuthor, rows, authorExtra, yFrom, yTo)).filter(it => it.title && it.title !== "Untitled");
     // 严格匹配姓名（默认开）：中文名去空格后全名相等；拉丁名分词顺序无关+连写兼容
-    if (isAuthor && $("#sExact").checked) {
-      const target = q.replace(/\s+/g, "").toLowerCase();
-      const isCJK = /[\u4e00-\u9fff]/.test(target);
-      const targetTokens = target.split(/\s+/).filter(Boolean);
-      list = list.filter(it => {
-        return (it.authors || []).some(a => {
-          const norm = String(a || "").replace(/[\s,]+/g, " ").trim().toLowerCase();
-          if (norm.replace(/\s+/g, "") === target) return true; // 连写全等（zhangyue / 张跃）
-          if (isCJK) return false; // 中文名：只认去空格全等（张跃≠张灵跃）
-          // 拉丁名：token 序列比较（顺序无关）
-          const nameTokens = norm.split(/[^a-z]+/).filter(Boolean);
-          if (!targetTokens.length || !nameTokens.length || nameTokens.length !== targetTokens.length) return false;
-          return targetTokens.every(t => nameTokens.includes(t));
-        });
-      });
+    // 规则（用户 2026-10-04 指令）：作者栏填写的名字，只在论文作者列表中匹配——正文提及不算
+    if ($("#sExact").checked && (authorExtra || (isAuthor && q))) {
+      const target = (authorExtra || q).replace(/\s+/g, "").toLowerCase();
+      list = list.filter(it => (it.authors || []).some(a => nameStrictMatch(a, target)));
     }
     if (yFrom) list = list.filter(it => !it.year || it.year >= parseInt(yFrom, 10));
     if (yTo) list = list.filter(it => !it.year || it.year <= parseInt(yTo, 10));
@@ -1042,7 +1031,8 @@ async function doSearch() {
       // 并行发一次作者模式检索（限定同数据源），把“该人作为作者”的论文合到最前
       try {
         const fn2 = src === "crossref" ? searchCrossref : src === "openalex" ? searchOpenAlex : searchArxiv;
-        const asAuthor = (await fn2(q, true, 10, null, null, null)).filter(it => it.title && it.title !== "Untitled");
+        let asAuthor = (await fn2(q, true, 10, null, null, null)).filter(it => it.title && it.title !== "Untitled");
+        if ($("#sExact").checked) { const tgt2 = q.replace(/\s+/g, "").toLowerCase(); asAuthor = asAuthor.filter(it => (it.authors || []).some(a => nameStrictMatch(a, tgt2))); }
         asAuthor.forEach(it => {
           const fp = contentFingerprint(it.title, (it.abstract || "") + it.title);
           if (list.some(x => contentFingerprint(x.title, (x.abstract || "") + x.title) === fp)) return;
@@ -1248,6 +1238,16 @@ function isCJKName(s) {
 function normCjkName(s) {
   return String(s || "").replace(/[\s\u3000·・]/g, ""); // 全角空格/间隔号也去除
 }
+function nameStrictMatch(rawAuthor, target) {
+  const norm = String(rawAuthor || "").replace(/[\s,]+/g, " ").trim().toLowerCase();
+  if (norm.replace(/\s+/g, "") === target) return true; // 连写全等（zhangyue / 张跃）
+  if (/[\u4e00-\u9fff]/.test(target)) return false; // 中文名：只认去空格全等（张跃≠张灵跃）
+  const targetTokens = target.split(/\s+/).filter(Boolean);
+  const nameTokens = norm.split(/[^a-z]+/).filter(Boolean);
+  if (!targetTokens.length || !nameTokens.length || nameTokens.length !== targetTokens.length) return false;
+  return targetTokens.every(tk => nameTokens.includes(tk));
+}
+
 
 /* ═══════════ 问答 ═══════════ */
 $("#btnAsk").addEventListener("click", ask);
