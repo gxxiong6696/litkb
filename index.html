@@ -178,7 +178,15 @@
         <button class="btn sm" id="sDlAll" style="flex:1">全选下载（<span id="sSelCount">0</span> 篇）</button>
         <button class="btn ghost sm" id="sClearSel" style="flex:0 0 auto">清空结果</button>
       </div>
-      <p class="muted" style="margin-top:6px">已入库条目会自动跳过并计数；下载完成后按钮变「已入库 ✓」。</p>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="sAiTopic" placeholder="研究主题/入选标准（AI 精选用，如：面向边缘设备的轻量化 Transformer）">
+        <button class="btn sm" id="sAiPick" style="flex:0 0 auto">AI 精选</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn ghost sm" id="sCiteSort" style="flex:1">按被引排序</button>
+        <label style="flex:0 0 auto;display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink2)"><input type="checkbox" id="sAiOnly" style="width:16px;height:16px">只看入选（≥60 分）</label>
+      </div>
+      <p class="muted" style="margin-top:6px">已入库条目会自动跳过并计数；下载完成后按钮变「已入库 ✓」。AI 精选把标题与摘要发往 DeepSeek 按主题打分（成本约几分钱/次），不点不外发。</p>
     </div>
     <div class="prog" id="sProg" style="display:none;margin:0 0 10px"><i></i></div>
     <div id="sResults"></div>
@@ -301,7 +309,7 @@
       <div class="kv"><span>数据存储</span><b>手机本机</b></div>
       <div class="kv"><span>联网需求</span><b>默认离线 · 云端增强可选</b></div>
       <div class="kv"><span>账号体系</span><b>无</b></div>
-      <div class="kv"><span>版本</span><b id="stVersion">1.9.0 (19)</b></div>
+      <div class="kv"><span>版本</span><b id="stVersion">2.0.0 (20)</b></div>
     </div>
     <div class="card">
       <h2>关于本版</h2>
@@ -327,7 +335,7 @@
 "use strict";
 /* ═══════════ 基础 ═══════════ */
 const $ = (s) => document.querySelector(s);
-const APP_VERSION = "1.9.0", VERSION_CODE = 19;
+const APP_VERSION = "2.0.0", VERSION_CODE = 20;
 const CHUNK_SIZE = 320, CHUNK_OVERLAP = 60, MAX_CHUNKS_PER_DOC = 400;
 let DOC_INDEX = [];      // {id,title,src,pages,importedAt,chunks:[{text,page,tf:Map,len}],abstract}
 let SEARCH_TERMS = null; // Map term -> df
@@ -913,7 +921,7 @@ async function searchCrossref(query, isAuthor, rows, authorExtra, yFrom, yTo, af
   if (authorExtra) parts.push("query.author=" + encodeURIComponent(authorExtra));
   if (affExtra) parts.push("query.affiliation=" + encodeURIComponent(affExtra));
   if (filters.length) parts.push("filter=" + filters.join(","));
-  const url = "https://api.crossref.org/works?" + parts.join("&") + "&rows=" + rows + "&select=title,author,DOI,abstract,issued,container-title";
+  const url = "https://api.crossref.org/works?" + parts.join("&") + "&rows=" + rows + "&select=title,author,DOI,abstract,issued,container-title,is-referenced-by-count";
   const r = await fetch(url, { headers: { "User-Agent": "litkb-app/1.8 (mailto:litkb@local)" } });
   if (!r.ok) throw new Error("Crossref HTTP " + r.status);
   const j = await r.json();
@@ -923,7 +931,8 @@ async function searchCrossref(query, isAuthor, rows, authorExtra, yFrom, yTo, af
     authorAffs: (it.author || []).map(a => ({ name: [a.given, a.family].filter(Boolean).join(" "), affs: (a.affiliation || []).map(x => String(x.name || "")) })),
     year: it.issued && it.issued["date-parts"] && it.issued["date-parts"][0] && it.issued["date-parts"][0][0] || null,
     abstract: (it.abstract || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
-    doi: it.DOI || "", venue: (it["container-title"] && it["container-title"][0]) || ""
+    doi: it.DOI || "", venue: (it["container-title"] && it["container-title"][0]) || "",
+    cites: (typeof it["is-referenced-by-count"] === "number") ? it["is-referenced-by-count"] : null
   }));
   return await fillAbstractsFromOpenAlex(out);
 }
@@ -963,7 +972,7 @@ async function searchOpenAlex(query, isAuthor, rows, authorExtra, yFrom, yTo, af
   const parts = [];
   if (filters.length) parts.push("filter=" + filters.join(","));
   if (query && !(isAuthor && !authorExtra)) parts.push("search=" + encodeURIComponent(query));
-  const url = "https://api.openalex.org/works?" + parts.join("&") + "&per-page=" + rows + "&select=title,authorships,publication_year,doi,abstract_inverted_index";
+  const url = "https://api.openalex.org/works?" + parts.join("&") + "&per-page=" + rows + "&select=title,authorships,publication_year,doi,abstract_inverted_index,cited_by_count";
   const r = await fetch(url);
   if (!r.ok) throw new Error("OpenAlex HTTP " + r.status);
   const j = await r.json();
@@ -983,7 +992,8 @@ async function searchOpenAlex(query, isAuthor, rows, authorExtra, yFrom, yTo, af
       })),
       year: it.publication_year || null,
       abstract: abstract.trim(),
-      doi: (it.doi || "").replace("https://doi.org/", ""), venue: ""
+      doi: (it.doi || "").replace("https://doi.org/", ""), venue: "",
+      cites: (typeof it.cited_by_count === "number") ? it.cited_by_count : null
     };
   });
 }
@@ -1020,7 +1030,7 @@ async function searchSemanticScholar(query, isAuthor, rows, authorExtra, yFrom, 
   if (query) terms.push(query);
   if (authorExtra) terms.push(authorExtra);
   const url = "https://api.semanticscholar.org/graph/v1/paper/search?query=" + encodeURIComponent(terms.join(" ")) +
-    "&limit=" + rows + "&fields=title,abstract,year,authors.name,externalIds,venue";
+    "&limit=" + rows + "&fields=title,abstract,year,authors.name,externalIds,venue,citationCount";
   let r = await fetch(url);
   if (r.status === 429 || r.status === 504) { await new Promise(res => setTimeout(res, 1800)); r = await fetch(url); }
   if (!r.ok) throw new Error("SS HTTP " + r.status);
@@ -1031,7 +1041,8 @@ async function searchSemanticScholar(query, isAuthor, rows, authorExtra, yFrom, 
     authorAffs: [],
     year: it.year || null,
     abstract: (it.abstract || "").replace(/\s+/g, " ").trim(),
-    doi: (it.externalIds && it.externalIds.DOI) || "", venue: it.venue || "Semantic Scholar"
+    doi: (it.externalIds && it.externalIds.DOI) || "", venue: it.venue || "Semantic Scholar",
+    cites: (typeof it.citationCount === "number") ? it.citationCount : null
   }));
 }
 async function searchPubMed(query, isAuthor, rows, authorExtra, yFrom, yTo, affExtra) {
@@ -1161,45 +1172,8 @@ async function doSearch() {
       if (!list.length) { box.innerHTML = '<div class="empty">没有同时满足主题、作者、单位的论文；可放宽单位关键词（如「清华」→「大学」）或换数据源重试。</div>'; $("#sToolbar").style.display = "none"; return; }
     }
     window.__searchResults = list;
-    box.innerHTML = "";
-    list.forEach((it, idx) => {
-      const div = document.createElement("div"); div.className = "card"; div.style.marginBottom = "10px";
-      const badge = it.authorRole === "author" ? '<span class="badge" style="margin-left:6px">' + esc(window.__lastQuery || "") + ' 是作者</span>' : (it.authorRole === "mention" ? '<span class="muted" style="margin-left:6px;font-size:11px">仅提及</span>' : "");
-      div.innerHTML = '<div style="font-weight:600;font-size:14px"></div>' + badge +
-        '<div class="muted" style="margin:4px 0"></div>' +
-        '<div class="snip"></div>' +
-        '<div class="row" style="margin-top:8px"><button class="btn ghost sm dl" style="flex:1">下载入库</button><button class="btn ghost sm pdfDl" style="flex:1;display:none">下载原文 PDF</button><button class="btn ghost sm pdfOpen" style="flex:1;display:none">原文页</button><button class="btn ghost sm pdfGs" style="flex:1;display:none">学术版</button><button class="btn ghost sm cpLink" style="flex:1;display:none">复制链接</button></div>';
-      div.querySelector("div").textContent = (idx + 1) + ". " + it.title;
-      div.querySelector(".muted").textContent = [it.authors.slice(0, 3).join("、") || "佚名", it.year, it.venue || (it.doi ? "DOI: " + it.doi : "")].filter(Boolean).join(" · ");
-      div.querySelector(".snip").textContent = it.abstract ? (it.abstract.slice(0, 140) + (it.abstract.length > 140 ? "…" : "")) : "（该条无摘要；下载仅存标题与作者信息，建议换有摘要的条目或用全文 PDF 补充）";
-      div.querySelector(".dl").addEventListener("click", () => importSearchItem(idx, div.querySelector(".dl")));
-      const isArxiv = /arxiv/i.test(it.venue || "") || (it.doi || "").toLowerCase().includes("arxiv") || (it.doi || "").startsWith("10.48550/");
-      const hasDoi = !!(it.doi || "").trim();
-      const titleForGs = encodeURIComponent(it.title || "");
-      if (isArxiv) {
-        const pdfBtn = div.querySelector(".pdfDl"); pdfBtn.style.display = "block";
-        pdfBtn.addEventListener("click", () => downloadSearchPdf(idx, pdfBtn));
-      } else {
-        const pdfBtn = div.querySelector(".pdfDl"), openBtn = div.querySelector(".pdfOpen"), gsBtn = div.querySelector(".pdfGs");
-        if (hasDoi) {
-          pdfBtn.style.display = "block"; pdfBtn.textContent = "下载原文（OA）";
-          pdfBtn.addEventListener("click", () => downloadSearchPdf(idx, pdfBtn));
-          openBtn.style.display = "block";
-          openBtn.addEventListener("click", () => { window.open("https://doi.org/" + it.doi.trim(), "_blank"); });
-        }
-        gsBtn.style.display = "block";
-        gsBtn.addEventListener("click", () => { window.open("https://scholar.google.com/scholar?q=" + titleForGs, "_blank"); });
-        const cpBtn = div.querySelector(".cpLink"); cpBtn.style.display = "block";
-        cpBtn.addEventListener("click", () => {
-          const link = hasDoi ? ("https://doi.org/" + it.doi.trim()) : ("https://scholar.google.com/scholar?q=" + titleForGs);
-          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => toast("链接已复制：" + link.slice(0, 40) + "…"), () => toast(link));
-          else toast(link, 5000);
-        });
-      }
-      box.appendChild(div);
-    });
-    $("#sToolbar").style.display = "block";
-    updateSelCount();
+    renderSearchCards(list);
+
   } catch (e) {
     box.innerHTML = '<div class="empty">检索失败：' + esc(e.message) + '（若在网页版：arXiv / DBLP 受跨域限制，请在 APK 内使用，或改用 OpenAlex / Crossref / PubMed / Semantic Scholar）</div>';
   } finally { btnDisable(false); prog.style.display = "none"; }
@@ -1257,6 +1231,117 @@ $("#sClearSel").addEventListener("click", () => {
 });
 $("#sBtn").addEventListener("click", doSearch);
 $("#sInput").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
+/* ═══════════ V2.0 结果渲染（doSearch / AI 精选 / 被引排序共用） ═══════════ */
+function renderSearchCards(list) {
+  const box = $("#sResults");
+  box.innerHTML = "";
+    list.forEach((it, idx) => {
+      const div = document.createElement("div"); div.className = "card"; div.style.marginBottom = "10px";
+      const badge = it.authorRole === "author" ? '<span class="badge" style="margin-left:6px">' + esc(window.__lastQuery || "") + ' 是作者</span>' : (it.authorRole === "mention" ? '<span class="muted" style="margin-left:6px;font-size:11px">仅提及</span>' : "");
+      const aiHtml = (typeof it.aiScore === "number" && it.aiScore >= 0) ? '<span class="badge" style="margin-left:6px">AI ' + it.aiScore + '</span>' : "";
+      div.innerHTML = '<div style="font-weight:600;font-size:14px"></div>' + badge + aiHtml +
+        '<div class="aiLine" style="display:none;font-size:12px;color:var(--accent);margin:2px 0 4px"></div>' +
+        '<div class="muted" style="margin:4px 0"></div>' +
+        '<div class="snip"></div>' +
+        '<div class="row" style="margin-top:8px"><button class="btn ghost sm dl" style="flex:1">下载入库</button><button class="btn ghost sm pdfDl" style="flex:1;display:none">下载原文 PDF</button><button class="btn ghost sm pdfOpen" style="flex:1;display:none">原文页</button><button class="btn ghost sm pdfGs" style="flex:1;display:none">学术版</button><button class="btn ghost sm cpLink" style="flex:1;display:none">复制链接</button></div>';
+      div.querySelector("div").textContent = (idx + 1) + ". " + it.title;
+      div.querySelector(".muted").textContent = [it.authors.slice(0, 3).join("、") || "佚名", it.year, it.venue || (it.doi ? "DOI: " + it.doi : ""), (typeof it.cites === "number" ? "被引 " + it.cites : "")].filter(Boolean).join(" · ");
+      if (typeof it.aiScore === "number" && it.aiScore >= 0) { const al = div.querySelector(".aiLine"); al.style.display = "block"; al.textContent = "AI 精选 " + it.aiScore + " 分 · " + (it.aiReason || ""); div.dataset.ai = String(it.aiScore); }
+      if (aiOnlyOn) { const s = parseFloat(div.dataset.ai); if (!(typeof s === "number" && s >= 60)) div.style.display = "none"; }
+      div.querySelector(".snip").textContent = it.abstract ? (it.abstract.slice(0, 140) + (it.abstract.length > 140 ? "…" : "")) : "（该条无摘要；下载仅存标题与作者信息，建议换有摘要的条目或用全文 PDF 补充）";
+      div.querySelector(".dl").addEventListener("click", () => importSearchItem(idx, div.querySelector(".dl")));
+      const isArxiv = /arxiv/i.test(it.venue || "") || (it.doi || "").toLowerCase().includes("arxiv") || (it.doi || "").startsWith("10.48550/");
+      const hasDoi = !!(it.doi || "").trim();
+      const titleForGs = encodeURIComponent(it.title || "");
+      if (isArxiv) {
+        const pdfBtn = div.querySelector(".pdfDl"); pdfBtn.style.display = "block";
+        pdfBtn.addEventListener("click", () => downloadSearchPdf(idx, pdfBtn));
+      } else {
+        const pdfBtn = div.querySelector(".pdfDl"), openBtn = div.querySelector(".pdfOpen"), gsBtn = div.querySelector(".pdfGs");
+        if (hasDoi) {
+          pdfBtn.style.display = "block"; pdfBtn.textContent = "下载原文（OA）";
+          pdfBtn.addEventListener("click", () => downloadSearchPdf(idx, pdfBtn));
+          openBtn.style.display = "block";
+          openBtn.addEventListener("click", () => { window.open("https://doi.org/" + it.doi.trim(), "_blank"); });
+        }
+        gsBtn.style.display = "block";
+        gsBtn.addEventListener("click", () => { window.open("https://scholar.google.com/scholar?q=" + titleForGs, "_blank"); });
+        const cpBtn = div.querySelector(".cpLink"); cpBtn.style.display = "block";
+        cpBtn.addEventListener("click", () => {
+          const link = hasDoi ? ("https://doi.org/" + it.doi.trim()) : ("https://scholar.google.com/scholar?q=" + titleForGs);
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => toast("链接已复制：" + link.slice(0, 40) + "…"), () => toast(link));
+          else toast(link, 5000);
+        });
+      }
+      box.appendChild(div);
+    });
+  $("#sToolbar").style.display = "block";
+  updateSelCount();
+}
+
+/* ═══════════ V2.0 被引排序 + AI 精选 ═══════════ */
+window.__aiCache = window.__aiCache || new Map();
+async function aiPick() {
+  const btn = $("#sAiPick");
+  const list = window.__searchResults || [];
+  if (!list.length) return toast("先检索出结果再做 AI 精选");
+  const topic = $("#sAiTopic").value.trim();
+  if (!topic) return toast("请先填写研究主题/入选标准");
+  if (!aiReady()) return toast("请先在设置页配置并启用 DeepSeek（AI 精选会调用云端 API）");
+  btn.disabled = true;
+  const need = [];
+  list.forEach(it => {
+    const fp = contentFingerprint(it.title, it.title + (it.abstract || "").slice(0, 300));
+    it._fp = fp;
+    const c = window.__aiCache.get(fp);
+    if (c) { it.aiScore = c.s; it.aiReason = c.r; } else need.push(it);
+  });
+  const batches = [];
+  for (let i = 0; i < need.length; i += 15) batches.push(need.slice(i, i + 15));
+  try {
+    for (let bi = 0; bi < batches.length; bi++) {
+      const batch = batches[bi];
+      btn.textContent = "AI 精选中… " + (bi + 1) + "/" + batches.length;
+      const lines = batch.map((it, k) => "[" + k + "] " + it.title + " | " + (it.authors || []).slice(0, 3).join(", ") + " | " + (it.year || "") + " | " + String(it.abstract || "").slice(0, 200).replace(/\s+/g, " ")).join("\n");
+      const prompt = "你是文献筛选助手。研究主题：" + topic + "\n\n下面是 " + batch.length + " 篇候选文献（编号 i、标题、作者、年份、摘要）。请逐篇判断其与主题的相关性，仅输出 JSON 数组，不要输出任何其他文字：\n[{\"i\":0,\"s\":92,\"r\":\"入选理由\"}]\n打分标准：85-100 直接相关必读；60-84 部分相关可选；30-59 边缘；0-29 无关。r 不超过 25 字。摘要缺失时仅依据标题判断并在 r 开头加「仅标题:」。\n\n" + lines;
+      let txt = await dsChat([{ role: "user", content: prompt }], 2000);
+      txt = String(txt).replace(/```json|```/g, "").trim();
+      const m = txt.match(/\[[\s\S]*\]/);
+      const arr = JSON.parse(m ? m[0] : txt);
+      if (!Array.isArray(arr)) throw new Error("模型未返回 JSON 数组");
+      arr.forEach(o => {
+        const it = batch[o && o.i];
+        if (!it) return;
+        it.aiScore = Math.max(0, Math.min(100, parseInt(o.s, 10) || 0));
+        it.aiReason = String(o.r || "").slice(0, 45);
+        window.__aiCache.set(it._fp, { s: it.aiScore, r: it.aiReason });
+      });
+    }
+    list.forEach(it => { if (typeof it.aiScore !== "number") { it.aiScore = -1; it.aiReason = "未评分"; } });
+    list.sort((a, b) => (b.aiScore ?? -1) - (a.aiScore ?? -1));
+    renderSearchCards(list);
+    const passed = list.filter(it => it.aiScore >= 60).length;
+    toast("AI 精选完成：入选 " + passed + " 篇（≥60 分），已按分排序", 3200);
+  } catch (e) { toast("AI 精选失败：" + e.message, 3600); }
+  finally { btn.disabled = false; btn.textContent = "AI 精选"; }
+}
+$("#sAiPick").addEventListener("click", aiPick);
+$("#sCiteSort").addEventListener("click", () => {
+  const list = window.__searchResults || [];
+  const has = list.some(it => typeof it.cites === "number");
+  if (!has) return toast("当前源无被引数据；请用 OpenAlex / Crossref / Semantic Scholar");
+  list.sort((a, b) => (b.cites || 0) - (a.cites || 0));
+  renderSearchCards(list);
+  toast("已按被引排序（无数据条目排后）", 2400);
+});
+$("#sAiOnly").addEventListener("change", () => {
+  const on = $("#sAiOnly").checked;
+  document.querySelectorAll("#sResults .card").forEach(c => {
+    const s = parseFloat(c.dataset.ai);
+    c.style.display = (on && !(typeof s === "number" && s >= 60)) ? "none" : "";
+  });
+});
+
 
 /* ═══════════ 原文 PDF 下载（OA 定位 → 全文入库） ═══════════ */
 function arxivIdFromItem(it) {
