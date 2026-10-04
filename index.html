@@ -143,10 +143,13 @@
     <div class="card">
       <h2>学术检索与下载</h2>
       <div class="row">
-        <select id="srcType" style="flex:0 0 118px">
-          <option value="crossref">Crossref 期刊</option>
+        <select id="srcType" style="flex:0 0 158px">
           <option value="openalex">OpenAlex 期刊</option>
+          <option value="crossref">Crossref 期刊</option>
           <option value="arxiv">arXiv 预印本</option>
+          <option value="ss">Semantic Scholar 综合</option>
+          <option value="pubmed">PubMed 生物医学</option>
+          <option value="dblp">DBLP 计算机</option>
         </select>
         <select id="sScope" style="flex:0 0 100px">
           <option value="keyword">按关键词</option>
@@ -298,7 +301,7 @@
       <div class="kv"><span>数据存储</span><b>手机本机</b></div>
       <div class="kv"><span>联网需求</span><b>默认离线 · 云端增强可选</b></div>
       <div class="kv"><span>账号体系</span><b>无</b></div>
-      <div class="kv"><span>版本</span><b id="stVersion">1.8.0 (18)</b></div>
+      <div class="kv"><span>版本</span><b id="stVersion">1.9.0 (19)</b></div>
     </div>
     <div class="card">
       <h2>关于本版</h2>
@@ -324,7 +327,7 @@
 "use strict";
 /* ═══════════ 基础 ═══════════ */
 const $ = (s) => document.querySelector(s);
-const APP_VERSION = "1.8.0", VERSION_CODE = 18;
+const APP_VERSION = "1.9.0", VERSION_CODE = 19;
 const CHUNK_SIZE = 320, CHUNK_OVERLAP = 60, MAX_CHUNKS_PER_DOC = 400;
 let DOC_INDEX = [];      // {id,title,src,pages,importedAt,chunks:[{text,page,tf:Map,len}],abstract}
 let SEARCH_TERMS = null; // Map term -> df
@@ -1010,6 +1013,84 @@ async function searchArxiv(query, isAuthor, rows, authorExtra, yFrom, yTo, affEx
     };
   });
 }
+/* ─── V1.9 新增数据源：Semantic Scholar / PubMed / DBLP ─── */
+async function searchSemanticScholar(query, isAuthor, rows, authorExtra, yFrom, yTo) {
+  // SS 无独立作者/单位服务端过滤（paper search）：作者名拼入相关性检索，客户端严格过滤兑底
+  const terms = [];
+  if (query) terms.push(query);
+  if (authorExtra) terms.push(authorExtra);
+  const url = "https://api.semanticscholar.org/graph/v1/paper/search?query=" + encodeURIComponent(terms.join(" ")) +
+    "&limit=" + rows + "&fields=title,abstract,year,authors.name,externalIds,venue";
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("SS HTTP " + r.status);
+  const j = await r.json();
+  return (j.data || []).map(it => ({
+    title: it.title || "Untitled",
+    authors: (it.authors || []).map(a => a.name).filter(Boolean),
+    authorAffs: [],
+    year: it.year || null,
+    abstract: (it.abstract || "").replace(/\s+/g, " ").trim(),
+    doi: (it.externalIds && it.externalIds.DOI) || "", venue: it.venue || "Semantic Scholar"
+  }));
+}
+async function searchPubMed(query, isAuthor, rows, authorExtra, yFrom, yTo, affExtra) {
+  // esearch 拿 PMID → efetch 拿全文元数据（含作者单位，支持单位联动）
+  const terms = [];
+  if (query && !(isAuthor && !authorExtra)) terms.push(query);
+  if (query && isAuthor && !authorExtra) terms.push(query + "[Author]");
+  if (authorExtra) terms.push(authorExtra + "[Author]");
+  if (yFrom || yTo) terms.push("(" + (yFrom || "1900") + "/01/01" + "[PDAT] : " + (yTo || "2100") + "/12/31" + "[PDAT])");
+  const eu = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/";
+  const r1 = await fetch(eu + "esearch.fcgi?db=pubmed&term=" + encodeURIComponent(terms.join(" AND ")) + "&retmax=" + rows + "&retmode=json&sort=relevance");
+  if (!r1.ok) throw new Error("PubMed esearch HTTP " + r1.status);
+  const j1 = await r1.json();
+  const ids = (j1.esearchresult && j1.esearchresult.idlist) || [];
+  if (!ids.length) return [];
+  const r2 = await fetch(eu + "efetch.fcgi?db=pubmed&id=" + ids.join(",") + "&retmode=xml");
+  if (!r2.ok) throw new Error("PubMed efetch HTTP " + r2.status);
+  const doc = new DOMParser().parseFromString(await r2.text(), "text/xml");
+  return [...doc.querySelectorAll("PubmedArticle")].map(en => {
+    const g = (tag) => { const el = en.querySelector(tag); return el ? el.textContent.trim() : ""; };
+    const authors = [...en.querySelectorAll("AuthorList > Author")];
+    return {
+      title: g("ArticleTitle").replace(/\s+/g, " ") || "Untitled",
+      authors: authors.map(a => [(a.querySelector("ForeName") || {}).textContent || "", (a.querySelector("LastName") || {}).textContent || ""].filter(Boolean).join(" ")).filter(Boolean),
+      authorAffs: authors.map(a => ({
+        name: [(a.querySelector("ForeName") || {}).textContent || "", (a.querySelector("LastName") || {}).textContent || ""].filter(Boolean).join(" "),
+        affs: [...a.querySelectorAll("AffiliationInfo > Affiliation")].map(x => x.textContent.trim()).filter(Boolean)
+      })),
+      year: (g("PubDate").match(/^(\d{4})/) || [null, null])[1] ? parseInt(g("PubDate").match(/^(\d{4})/)[1], 10) : null,
+      abstract: [...en.querySelectorAll("Abstract > AbstractText")].map(x => x.textContent.trim()).join(" ").replace(/\s+/g, " "),
+      doi: ([...en.querySelectorAll("ArticleId")].find(x => x.getAttribute("IdType") === "doi") || {}).textContent || "",
+      venue: g("Journal > Title") || "PubMed"
+    };
+  });
+}
+async function searchDBLP(query, isAuthor, rows, authorExtra, yFrom, yTo) {
+  // DBLP 无单位/摘要数据；作者名拼入 q，客户端严格过滤兑底
+  const terms = [];
+  if (query && !(isAuthor && !authorExtra)) terms.push(query);
+  if (query && isAuthor && !authorExtra) terms.push(query);
+  if (authorExtra) terms.push(authorExtra);
+  const url = "https://dblp.org/search/publ/api?q=" + encodeURIComponent(terms.join(" ")) + "&format=json&h=" + rows + "&f=0";
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("DBLP HTTP " + r.status);
+  const j = await r.json();
+  const hits = (j.result && j.result.hits && j.result.hits.hit) || [];
+  return hits.map(hit => {
+    const info = hit.info || {};
+    const rawA = info.authors && info.authors.author;
+    const arr = rawA ? (Array.isArray(rawA) ? rawA : [rawA]) : [];
+    return {
+      title: String(info.title || "Untitled").replace(/\s+/g, " "),
+      authors: arr.map(a => String(a.text || "")),
+      authorAffs: [],
+      year: info.year ? parseInt(info.year, 10) : null,
+      abstract: "",
+      doi: info.doi || "", venue: info.venue || "DBLP"
+    };
+  });
+}
 async function doSearch() {
   const q = $("#sInput").value.trim();
   const authorExtra = $("#sAuthor").value.trim();
@@ -1020,11 +1101,12 @@ async function doSearch() {
   if ((yFrom && yFrom.length !== 4) || (yTo && yTo.length !== 4)) return toast("年份格式应为 4 位数字，如 2020");
   if (yFrom && yTo && parseInt(yFrom, 10) > parseInt(yTo, 10)) return toast("起始年不能晚于截止年");
   const src = $("#srcType").value, isAuthor = $("#sScope").value === "author";
-  const rows = src === "crossref" ? 30 : 15;
+  if (affExtra && (src === "ss" || src === "dblp")) return toast("该源无作者单位数据；单位筛选请用 OpenAlex、Crossref、arXiv 或 PubMed");
+  const rows = src === "crossref" ? 50 : 25;
   const box = $("#sResults"), prog = $("#sProg");
   btnDisable(true); box.innerHTML = '<div class="empty">正在检索 ' + esc(src) + ' …</div>'; prog.style.display = "block"; prog.firstElementChild.style.width = "30%";
   try {
-    const fn = src === "crossref" ? searchCrossref : src === "openalex" ? searchOpenAlex : searchArxiv;
+    const fn = src === "crossref" ? searchCrossref : src === "openalex" ? searchOpenAlex : src === "arxiv" ? searchArxiv : src === "ss" ? searchSemanticScholar : src === "pubmed" ? searchPubMed : searchDBLP;
     let list = (await fn(q, isAuthor, rows, authorExtra, yFrom, yTo, affExtra)).filter(it => it.title && it.title !== "Untitled");
     // 严格匹配姓名（默认开）：中文名去空格后全名相等；拉丁名分词顺序无关+连写兼容
     // 规则（用户 2026-10-04 指令）：作者栏填写的名字，只在论文作者列表中匹配——正文提及不算
