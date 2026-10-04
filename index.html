@@ -309,11 +309,15 @@
       <div class="kv"><span>数据存储</span><b>手机本机</b></div>
       <div class="kv"><span>联网需求</span><b>默认离线 · 云端增强可选</b></div>
       <div class="kv"><span>账号体系</span><b>无</b></div>
-      <div class="kv"><span>版本</span><b id="stVersion">2.0.0 (20)</b></div>
+      <div class="kv"><span>版本</span><b id="stVersion">2.1.0 (21)</b></div>
     </div>
     <div class="card">
       <h2>关于本版</h2>
-      <p class="muted">V1.2 新增 Word 调研报告导出（文章式正文、章节、引用表，可直接再编辑）；V1.1 在确定性算法基础上新增可选的 DeepSeek 云端增强（BYOK）：库问答升级为理解式回答、单篇摘要升级为生成式、报告要点升级为改写成稿，均保留页码溯源与离线兑底。端侧小模型与 OCR 按路线图在后续版本接入。</p>
+      <div id="relNotes">
+        <div class="kv"><span>版本</span><b>2.1.0 (21)</b></div>
+        <div class="kv"><span>升级时间</span><b>2026-10-04 21:25</b></div>
+        <div class="kv"><span>升级内容</span><b>「关于本版」机制建立：自本版起每次升级自动更新版本号、升级时间与升级内容说明。回顾：V2.0 新增 AI 精选（DeepSeek 按主题打分排序、低分折叠）与按被引排序；V1.9 新增 Semantic Scholar / PubMed / DBLP 三源并将单次结果提额至 50/25 条。</b></div>
+      </div>
     </div>
   </section>
 </main>
@@ -335,7 +339,7 @@
 "use strict";
 /* ═══════════ 基础 ═══════════ */
 const $ = (s) => document.querySelector(s);
-const APP_VERSION = "2.0.0", VERSION_CODE = 20;
+const APP_VERSION = "2.1.0", VERSION_CODE = 21;
 const CHUNK_SIZE = 320, CHUNK_OVERLAP = 60, MAX_CHUNKS_PER_DOC = 400;
 let DOC_INDEX = [];      // {id,title,src,pages,importedAt,chunks:[{text,page,tf:Map,len}],abstract}
 let SEARCH_TERMS = null; // Map term -> df
