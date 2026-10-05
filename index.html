@@ -329,11 +329,15 @@
       <div class="kv"><span>数据存储</span><b>手机本机</b></div>
       <div class="kv"><span>联网需求</span><b>默认离线 · 云端增强可选</b></div>
       <div class="kv"><span>账号体系</span><b>无</b></div>
-      <div class="kv"><span>版本</span><b id="stVersion">2.4.0 (24)</b></div>
+      <div class="kv"><span>版本</span><b id="stVersion">2.5.0 (25)</b></div>
     </div>
     <div class="card">
       <h2>升级历史</h2>
       <div id="relNotes">
+        <div class="kv"><span>版本</span><b>2.5.0 (25)</b></div>
+        <div class="kv"><span>升级时间</span><b>2026-10-05 08:55</b></div>
+        <div class="kv"><span>升级内容</span><b>建立用户智能体对抗测试机制（9 组用例：超长输入、注入串、快速连点、失败隔离、开关残留等，发版即跑）；修复对抗测试发现的「只看入选」开关残留缺陷（重新检索后结果被错误折叠）。</b></div>
+        <div style="height:1px;background:#e5ded2;margin:8px 0"></div>
         <div class="kv"><span>版本</span><b>2.4.0 (24)</b></div>
         <div class="kv"><span>升级时间</span><b>2026-10-04 22:45</b></div>
         <div class="kv"><span>升级内容</span><b>「关于本版」升级为「升级历史」：保留全部历史版本记录（最新在前），此后每次发版新条目自动置顶。</b></div>
@@ -415,7 +419,7 @@
 "use strict";
 /* ═══════════ 基础 ═══════════ */
 const $ = (s) => document.querySelector(s);
-const APP_VERSION = "2.4.0", VERSION_CODE = 24;
+const APP_VERSION = "2.5.0", VERSION_CODE = 25;
 const CHUNK_SIZE = 320, CHUNK_OVERLAP = 60, MAX_CHUNKS_PER_DOC = 400;
 let DOC_INDEX = [];      // {id,title,src,pages,importedAt,chunks:[{text,page,tf:Map,len}],abstract}
 let SEARCH_TERMS = null; // Map term -> df
@@ -1339,6 +1343,7 @@ async function doSearch() {
   const srcs = [...document.querySelectorAll("#srcChecks input:checked")].map(x => x.value);
   const isAuthor = $("#sScope").value === "author";
   if (!srcs.length) return toast("请至少勾选一个数据源");
+  $("#sAiOnly").checked = false; // ADV7 修复：新检索重置「只看入选」，避免新结果因无 AI 分数被全部折叠
   const rows = srcs.length > 1 ? 20 : (srcs[0] === "crossref" ? 50 : 25);
   const box = $("#sResults"), prog = $("#sProg");
   btnDisable(true); box.innerHTML = '<div class="empty">正在检索 ' + srcs.length + ' 个数据源：' + esc(srcs.join("、")) + ' …</div>'; prog.style.display = "block"; prog.firstElementChild.style.width = "30%";
