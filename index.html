@@ -329,11 +329,15 @@
       <div class="kv"><span>数据存储</span><b>手机本机</b></div>
       <div class="kv"><span>联网需求</span><b>默认离线 · 云端增强可选</b></div>
       <div class="kv"><span>账号体系</span><b>无</b></div>
-      <div class="kv"><span>版本</span><b id="stVersion">2.5.0 (25)</b></div>
+      <div class="kv"><span>版本</span><b id="stVersion">2.6.0 (26)</b></div>
     </div>
     <div class="card">
       <h2>升级历史</h2>
       <div id="relNotes">
+        <div class="kv"><span>版本</span><b>2.6.0 (26)</b></div>
+        <div class="kv"><span>升级时间</span><b>2026-10-05 13:00</b></div>
+        <div class="kv"><span>升级内容</span><b>检索结果翻页：结果较多时每页显示 10 条，底部提供上一页/下一页与页码指示（共 x 页）；「全选下载」仍作用于全部结果，不受翻页影响。</b></div>
+        <div style="height:1px;background:#e5ded2;margin:8px 0"></div>
         <div class="kv"><span>版本</span><b>2.5.0 (25)</b></div>
         <div class="kv"><span>升级时间</span><b>2026-10-05 08:55</b></div>
         <div class="kv"><span>升级内容</span><b>建立用户智能体对抗测试机制（9 组用例：超长输入、注入串、快速连点、失败隔离、开关残留等，发版即跑）；修复对抗测试发现的「只看入选」开关残留缺陷（重新检索后结果被错误折叠）。</b></div>
@@ -419,7 +423,7 @@
 "use strict";
 /* ═══════════ 基础 ═══════════ */
 const $ = (s) => document.querySelector(s);
-const APP_VERSION = "2.5.0", VERSION_CODE = 25;
+const APP_VERSION = "2.6.0", VERSION_CODE = 26;
 const CHUNK_SIZE = 320, CHUNK_OVERLAP = 60, MAX_CHUNKS_PER_DOC = 400;
 let DOC_INDEX = [];      // {id,title,src,pages,importedAt,chunks:[{text,page,tf:Map,len}],abstract}
 let SEARCH_TERMS = null; // Map term -> df
@@ -1344,6 +1348,7 @@ async function doSearch() {
   const isAuthor = $("#sScope").value === "author";
   if (!srcs.length) return toast("请至少勾选一个数据源");
   $("#sAiOnly").checked = false; // ADV7 修复：新检索重置「只看入选」，避免新结果因无 AI 分数被全部折叠
+  window.__pageNo = 0; // V2.6：新检索回到第一页
   const rows = srcs.length > 1 ? 20 : (srcs[0] === "crossref" ? 50 : 25);
   const box = $("#sResults"), prog = $("#sProg");
   btnDisable(true); box.innerHTML = '<div class="empty">正在检索 ' + srcs.length + ' 个数据源：' + esc(srcs.join("、")) + ' …</div>'; prog.style.display = "block"; prog.firstElementChild.style.width = "30%";
@@ -1485,8 +1490,13 @@ $("#sNoSrc").addEventListener("click", () => { document.querySelectorAll("#srcCh
 function renderSearchCards(list) {
   const box = $("#sResults");
   const aiOnlyOn = $("#sAiOnly") && $("#sAiOnly").checked;
+  const PAGE = 10;
+  const totalPages = Math.max(1, Math.ceil(list.length / PAGE));
+  if (window.__pageNo == null || window.__pageNo >= totalPages) window.__pageNo = 0;
+  const start = window.__pageNo * PAGE;
+  const slice = list.slice(start, start + PAGE);
   box.innerHTML = "";
-    list.forEach((it, idx) => {
+    slice.forEach((it, idx) => {
       const div = document.createElement("div"); div.className = "card"; div.style.marginBottom = "10px";
       const badge = it.authorRole === "author" ? '<span class="badge" style="margin-left:6px">' + esc(window.__lastQuery || "") + ' 是作者</span>' : (it.authorRole === "mention" ? '<span class="muted" style="margin-left:6px;font-size:11px">仅提及</span>' : "");
       const aiHtml = (typeof it.aiScore === "number" && it.aiScore >= 0) ? '<span class="badge" style="margin-left:6px">AI ' + it.aiScore + '</span>' : "";
@@ -1495,7 +1505,7 @@ function renderSearchCards(list) {
         '<div class="muted" style="margin:4px 0"></div>' +
         '<div class="snip"></div>' +
         '<div class="row" style="margin-top:8px"><button class="btn ghost sm dl" style="flex:1">下载入库</button><button class="btn ghost sm pdfDl" style="flex:1;display:none">下载原文 PDF</button><button class="btn ghost sm pdfOpen" style="flex:1;display:none">原文页</button><button class="btn ghost sm pdfGs" style="flex:1;display:none">学术版</button><button class="btn ghost sm cpLink" style="flex:1;display:none">复制链接</button></div>';
-      div.querySelector("div").textContent = (idx + 1) + ". " + it.title;
+      div.querySelector("div").textContent = (start + idx + 1) + ". " + it.title;
       div.querySelector(".muted").textContent = [it.authors.slice(0, 3).join("、") || "佚名", it.year, it.venue || (it.doi ? "DOI: " + it.doi : ""), (typeof it.cites === "number" ? "被引 " + it.cites : "")].filter(Boolean).join(" · ");
       if (typeof it.aiScore === "number" && it.aiScore >= 0) { const al = div.querySelector(".aiLine"); al.style.display = "block"; al.textContent = "AI 精选 " + it.aiScore + " 分 · " + (it.aiReason || ""); div.dataset.ai = String(it.aiScore); }
       if (aiOnlyOn) { const s = parseFloat(div.dataset.ai); if (!(typeof s === "number" && s >= 60)) div.style.display = "none"; }
@@ -1526,6 +1536,19 @@ function renderSearchCards(list) {
       }
       box.appendChild(div);
     });
+  if (list.length > PAGE) {
+    const nav = document.createElement("div");
+    nav.className = "row"; nav.style.marginTop = "10px";
+    const prev = document.createElement("button"); prev.className = "btn ghost sm"; prev.style.flex = "1"; prev.textContent = "上一页";
+    const info = document.createElement("div"); info.style.cssText = "flex:0 0 auto;align-self:center;font-size:12px;color:var(--ink2)"; info.textContent = "第 " + (window.__pageNo + 1) + " / " + totalPages + " 页（共 " + list.length + " 条）";
+    const next = document.createElement("button"); next.className = "btn ghost sm"; next.style.flex = "1"; next.textContent = "下一页";
+    prev.disabled = window.__pageNo === 0;
+    next.disabled = window.__pageNo >= totalPages - 1;
+    prev.addEventListener("click", () => { if (window.__pageNo > 0) { window.__pageNo--; renderSearchCards(list); window.scrollTo(0, 0); } });
+    next.addEventListener("click", () => { if (window.__pageNo < totalPages - 1) { window.__pageNo++; renderSearchCards(list); window.scrollTo(0, 0); } });
+    nav.appendChild(prev); nav.appendChild(info); nav.appendChild(next);
+    box.appendChild(nav);
+  }
   $("#sToolbar").style.display = "block";
   updateSelCount();
 }
@@ -1570,6 +1593,7 @@ async function aiPick() {
     }
     list.forEach(it => { if (typeof it.aiScore !== "number") { it.aiScore = -1; it.aiReason = "未评分"; } });
     list.sort((a, b) => (b.aiScore ?? -1) - (a.aiScore ?? -1));
+    window.__pageNo = 0;
     renderSearchCards(list);
     const passed = list.filter(it => it.aiScore >= 60).length;
     toast("AI 精选完成：入选 " + passed + " 篇（≥60 分），已按分排序", 3200);
@@ -1582,6 +1606,7 @@ $("#sCiteSort").addEventListener("click", () => {
   const has = list.some(it => typeof it.cites === "number");
   if (!has) return toast("当前源无被引数据；请用 OpenAlex / Crossref / Scopus / Semantic Scholar");
   list.sort((a, b) => (b.cites || 0) - (a.cites || 0));
+  window.__pageNo = 0;
   renderSearchCards(list);
   toast("已按被引排序（无数据条目排后）", 2400);
 });
